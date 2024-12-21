@@ -27,8 +27,17 @@ This extension contributes the following settings:
 
 - None
 
+## Contributing
+
+vsce package
+vsce publish
+
 ## Release Notes
 
 ### 1.0.0
 
 Initial release of Grovebook Editor.
+
+### 1.0.1
+
+- Fixed the API Key

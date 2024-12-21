@@ -178,13 +178,18 @@ function activate(context) {
     try {
       const baseUrl = `${protocol}://${host}`;
       const url = `${baseUrl}/api/grove/simpleUploadFile`;
+      const apiKey = getApiKey(baseUrl);
+      if (!apiKey) {
+        vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
+        return;
+      }
       const response = await fetch(
         url,
         {
           method: "POST",
           headers: {
             Accept: "application/json",
-            "x-api-key": "spaceheap3",
+            "x-api-key": apiKey,
           },
           body: formData,
         }
