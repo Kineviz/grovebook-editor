@@ -1,0 +1,50 @@
+{
+  "name": "grovebook-editor",
+  "displayName": "Grovebook Editor",
+  "description": "",
+  "version": "1.0.0",
+  "publisher": "kineviz",
+  "engines": {
+    "vscode": "^1.93.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:*"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Grovebook Editor",
+      "properties": {
+        "grovebook.apiKeys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Map of GraphXR server origins to their corresponding API keys",
+          "scope": "resource"
+        }
+      }
+    },
+    "commands": []
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.93.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.16.0"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
