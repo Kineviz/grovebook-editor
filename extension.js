@@ -64,10 +64,6 @@ function activate(context) {
       const fileName = queryParams.get("open");
       const workspaceEdit = new vscode.WorkspaceEdit();
       
-      // Extract projectId from the fileName path
-      const pathParts = fileName.split('/');
-      const actualFileName = pathParts[pathParts.length - 1];
-      
       // Create full path structure in ~/.grove instead of /tmp
       const [protocol, host] = baseUrl.split("://");
       const homedir = os.homedir();
@@ -107,6 +103,7 @@ function activate(context) {
 
         // Open document
         const document = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.languages.setTextDocumentLanguage(document, "markdown");
         await vscode.window.showTextDocument(document);
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to fetch file: ${error.message}`);
@@ -152,7 +149,7 @@ function activate(context) {
             value: codeContent,
             pinCode: true,
             dname: crypto.randomUUID(), // Generate unique ID for each block
-            codeMode: codeMode,
+            codeMode: convertCodeModeMdToGrove(codeMode),
           },
         },
       });
@@ -213,11 +210,32 @@ function convertGroveToMd(grove) {
   const blocks = grove.blocks;
   const mdBlocks = blocks.map((block) => {
     if (block.type === "codeTool") {
-      return `\`\`\`${block.data.codeData.codeMode}\n${block.data.codeData.value}\n\`\`\``;
+      return `\`\`\`${convertCodeModeToMd(block.data.codeData.codeMode)}\n${block.data.codeData.value}\n\`\`\``;
     }
     return block.data.text;
   });
   return mdBlocks.join("\n\n");
+}
+
+function convertCodeModeToMd(codeMode) {
+  /**
+   * Convert code mode to one which will be highlighted correctly by vscode markdown block highlighting
+   */
+  switch (codeMode) {
+    case "javascript2":
+      return "js";
+    default:
+      return codeMode;
+  }
+}
+
+function convertCodeModeMdToGrove(codeMode) {
+  switch (codeMode) {
+    case "js":
+      return "javascript2";
+    default:
+      return codeMode;
+  }
 }
 
 // This method is called when your extension is deactivated
