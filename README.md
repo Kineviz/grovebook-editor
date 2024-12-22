@@ -45,3 +45,7 @@ Initial release of Grovebook Editor.
 ### 1.1.0
 
 - Open file with markdown language for appropriate syntax highlighting
+
+### 1.2.1
+
+- Save to ~/.kineviz-grove
