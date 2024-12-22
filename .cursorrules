@@ -1,0 +1,829 @@
+# GraphXR API Reference
+
+## Camera
+
+### flyToCenter
+
+Fly the camera to the center of a slice of nodes, optionally with an offset, optionally with a custom duration or tween function
+@synonyms centerTo
+
+```js
+gxr.flyToCenter();
+gxr.flyToCenter(gxr.nodes().slice(0, 10).ids())
+gxr.flyToCenter(gxr.nodes().slice(0, 10).ids(), { duration: 0, offset: -3 }));
+```
+
+### flyToPosition
+
+Fly the camera to a position, optionally with an offset, optionally with a custom duration or tween function
+
+```js
+const position = gxr.nodes({name: "Flo"}).at(0).position;
+gxr.flyToPosition(position); // no offset
+gxr.flyToPosition(position, {offset: -3}); // with an offset
+gxr.flyToPosition(position, {duration: 0}); // instantly
+```
+
+### flyOut
+
+Zoom out until all nodes are visible
+
+```js
+gxr.flyOut();
+```
+
+### setCameraOptions
+
+```js
+gxr.setCameraOptions({
+  hideAxes: true,
+  rotating: true,
+  speed: 0.5,
+});
+```
+
+### setCameraRotating
+
+```js
+gxr.setCameraRotating(true);
+```
+
+## Captions
+
+### captionNodesByProperties
+
+```js
+gxr.captionNodesByProperties({category: "Person", properties: ["name", "age"]});
+```
+
+## Events
+
+### onGraphDataUpdate
+
+```js
+gxr.onGraphDataUpdate(() => console.log("Graph data updated"));
+```
+
+### onSelect
+
+```js
+gxr.onSelect((event) => console.log("Selected nodes/edges", event));
+```
+
+## Graph
+
+### add
+
+Add nodes and edges to the graph.
+
+```js
+gxr.add("A") -> Node with id "A"
+gxr.add("A", "B") -> Edge
+gxr.add(["A", "B"]) -> Node[]
+gxr.add({ id: "A", category: "Person", properties: {name: "Flo"} }) -> Node
+gxr.add([{ id: "A", category: "Person", properties: {name: "Flo"} }]) -> Node[]
+gxr.add({ sourceId: "A", targetId: "B" }) -> Edge
+gxr.add([{ sourceId: "A", targetId: "B" }]) -> Edge[]
+gxr.add([{ source: {...}, edge: {...}, target: {...} }], {...}) -> Edge[] // mergeRelationships
+gxr.add({ name: "Flo" }, { category: "Person" }) -> Node
+gxr.add([{ name: "Flo" }], { category: "Person" }) -> Node[]
+gxr.add([{ name: "Flo" }]) -> Node[]
+gxr.add({ id: "A" }, { id: "B" }) -> Edge
+gxr.add({ id: "A" }, { id: "B" }, { relationship: "LINK" }) -> Edge with relationship "LINK"
+```
+
+### addNode
+
+Add node to the graph.
+
+```js
+gxr.addNode({ id: "A", category: "Person", properties: {name: "Flo"} });
+```
+
+### clear
+
+Clear the graph
+
+```js
+gxr.clear();
+```
+
+### edges
+
+```js
+gxr.edges().forEach(console.log);
+gxr.edges().property('since', 2023);
+gxr.edges().property('since', () => Math.random() * 3000);
+gxr.edges().style('width', 10)
+gxr.edges({relationship: 'LINKS'}).style('width', 10);
+gxr.edges({properties: {since: 2023}}).style('width', 10);
+```
+
+### getCategoryConfig
+
+```js
+gxr.getCategoryConfig('Person');
+```
+
+### getNode
+
+```js
+gxr.getNode("A")
+```
+
+### getRelationshipConfig
+
+```js
+gxr.getRelationshipConfig("RELATED_TO");
+```
+
+### graph
+
+```js
+// Add a node with id "A"
+gxr.graph().add("A");
+
+// Select nodes in shortest path from A -> B, including A and B
+gxr.graph().shortestPath("A", "B").nodes().select()
+
+// Generate a random graph, run degree algorithm, and then run ego layout for a duration of 1 second.
+gxr
+  .graph()
+  .clear()
+  .generate()
+  .degree()
+  .ego(
+    {
+      properties: { degree: (value) => value >= 3 },
+      depth: 5,
+      mode: "tree",
+      orientation: "down",
+      edgeLength: 0.5,
+      sortByProperty: "degree",
+    },
+    { duration: 1000 }
+  );
+```
+
+### makeGraph
+
+```js
+gxr.makeGraph().add("A").add("B").add("C").add("A", "B").add("B", "C").add("C", "A");
+```
+
+### nodes
+
+```js
+gxr.nodes().forEach(console.log);
+gxr.nodes().property('age', 24);
+gxr.nodes().property('age', () => Math.random() * 100);
+gxr.nodes({category: "Person"}).style('selected', true);
+gxr.nodes({properties: {age: 24}}).style('selected', true);
+gxr.nodes({properties: {age: (age) => age > 24}}).style('selected', true);
+```
+
+### randomGraph
+
+```js
+gxr.randomGraph()
+gxr.randomGraph({nodeCount: 100, edgeCount: 200, categories: ["Person", "Company"], relationships: ["WORKS_FOR", "KNOWS"]});
+```
+
+### select
+
+```js
+gxr.select('age > 30')
+```
+
+## Layout
+
+### alignBy
+
+Given one of x, y, or z, find the center of that dimension
+and align all Nodes to that center on that dimension only.
+
+```js
+gxr.alignBy({
+  dimension: 'x',
+})
+```
+
+### circle
+
+All the nodes spread on a circle
+
+```js
+gxr.circle();
+```
+
+### cube
+
+All the nodes spread on a cube.
+
+```js
+gxr.cube();
+```
+
+### distributionBy
+
+Equally space Nodes on one of the x, y, or z axes while keeping the other two
+dimensions constant. Optionally bin the Nodes by a property value. Optionally
+scale the spacing by a "spread" factor (the higher the spread, the farther apart).
+
+```js
+// Distribute nodes on the x-axis by a property
+gxr.distributionBy('similarity')
+
+// Equally space Nodes on the x-axis
+gxr.distributionBy({
+  dimension: 'x', // y, or z
+})
+
+// Equally space Nodes on the x-axis and bin the Nodes by "seasonNumber"
+gxr.distributionBy({
+  bin: 'seasonNumber',
+  dimension: 'x',
+})
+
+// Equally space Nodes on the x-axis and bin the Nodes by "seasonNumber" in descending order
+gxr.distributionBy({
+  bin: 'seasonNumber',
+  dimension: 'x',
+  reverse: true,
+})
+```
+
+### ego
+
+Ego reveals hierarchal data by arranging nodes in a tree, where a node's depth in
+the tree is equal to the length of the shortest path to the node. The tree projects
+linearly in one direction, or radially around the root[s].
+
+```js
+gxr.ego({
+  depth: 3, // maximum depth of the tree; default 100
+  edgeLength: 1 // visual length of the edges in the tree; default 0.2
+  mode: 'rings' // 'tree' or 'rings'; default 'tree'
+  orientation: 'down' // 'up', 'down', 'left', or 'right'; default 'right'
+  sortByProperty: 'ComponentName' // arrange child nodes in ascending order by a property
+  [sortByProperty: sortByProperty({property: "ComponentName", ascending: false})] // same as above, but descending
+}))
+```
+
+### grid
+
+Equally space Nodes on the x-axis, y-axis, z=0.
+
+```js
+gxr.grid();
+```
+
+### line
+
+Equally space Nodes on the x-axis, y=0, z=0.
+
+```js
+gxr.line();
+```
+
+### parametric
+
+Map the x, y, and/or z dimensions to the range [-2, 2] by applying a linear scale
+to all or a subset of the domain of a property.
+
+```js
+If a dimension is omitted, it is flattened to align with the grid.
+
+// Line up Nodes on the x-axis, ordered by seasonNumber.
+// Also set y and z to 0
+gxr.parametric({
+  x: 'seasonNumber',
+  y: 0,
+  z: 0,
+})
+
+// Line up Nodes on the x-axis, ordered by seasonNumber descending. Align y and z to the grid.
+gxr.parametric({
+  x: 'seasonNumber',
+  reverse: true,
+})
+
+// Linearly scale seasonNumber, episodeNumber, and millionViewers on the x, y, and z dimensions respectively
+gxr.parametric({
+  x: 'seasonNumber',
+  y: 'episodeNumber',
+  z: 'millionViewers',
+})
+```
+
+### rotate
+
+Given one of the x, y, or z dimensions, find the center point of all the Nodes
+and rotate all Nodes around the axis passing through the center point
+and lying on the dimension given.
+
+```js
+gxr.rotate({
+  dimension: 'x',
+  theta: 90,
+})
+
+gxr.rotate({
+  dimension: 'z',
+  theta: 45
+})
+```
+
+### scale
+
+Scale the distance of each node from a computed center by a constant factor.
+
+```js
+gxr.scale({
+  x: 2,
+  y: 2,
+  z: 2,
+})
+```
+
+### scatter
+
+Set each node to a random point.
+
+```js
+gxr.scatter()
+```
+
+### shift
+
+Add a constant vector to the position of each node.
+
+```js
+gxr.shift({
+  x: 1,
+})
+```
+
+### setParametricAxesOptions
+
+```js
+gxr.setParametricAxesOptions({
+  showAxes: false,
+})
+```
+
+### spiral
+
+All the nodes spread on a spiral
+
+```js
+gxr.spiral()
+```
+
+### forceLayout
+
+Run a force layout on the graph.
+
+```js
+// Run force layout
+gxr.forceLayout();
+```
+
+## Neo4j
+
+### neo4j
+
+```js
+ nodes(): IterableNodes;
+gxr.neo4j("MATCH (n) RETURN n LIMIT 10");
+```
+
+## Settings
+
+### setTipsEnabled
+
+```js
+gxr.setTipsEnabled(false);
+```
+
+### setAutoShowImage
+
+```js
+gxr.setAutoShowImage(true);
+```
+
+### setEdgeScale
+
+```js
+gxr.setEdgeScale(0.5);
+```
+
+### setEdgeArrowVisibility
+
+```js
+gxr.setEdgeArrowVisibility(true);
+```
+
+### setBlendEdge
+
+```js
+gxr.setBlendEdge(false);
+```
+
+### setAutoCaption
+
+```js
+gxr.setAutoCaption(true);
+```
+
+### setFullscreen
+
+```js
+gxr.setFullscreen(true);
+```
+
+### setPinIconVisible
+
+```js
+gxr.setPinIconVisible(false);
+```
+
+### setAlternateCaption
+
+```js
+gxr.setAlternateCaption(false);
+```
+
+### setDashline
+
+```js
+gxr.setDashline(false);
+```
+
+### setTheme
+
+```js
+gxr.setTheme("light")
+gxr.setTheme("dark")
+```
+
+### setUseCurveLine
+
+```js
+//use curve line
+gxr.setUseCurveLine(true)
+//use straight line
+gxr.setUseCurveLine(false)
+```
+
+### setRelationshipNameVisibility
+
+```js
+gxr.setRelationshipNameVisibility(true)
+```
+
+### setGraphMode
+
+```js
+gxr.setGraphMode("2D")
+```
+
+### setCaptionScale
+
+```js
+gxr.setCaptionScale(0.5)
+```
+
+## Styles
+
+### colorNodesByProperty
+
+```js
+gxr.colorNodesByProperty('age');
+gxr.colorNodesByProperty({property: 'age'});
+gxr.colorNodesByProperty({property: 'age', scale: 'BuGn'});
+```
+
+### getIcons
+
+Get a list of available icons
+
+```js
+const icons = await gxr.getIcons();
+```
+
+### getIconByName
+
+Get an icon by name
+
+```js
+const icon = await gxr.getIconByName("person");
+```
+
+### setCategoryColor
+
+Set a category's color by hex
+
+```js
+gxr.setCategoryColor("Person", "#00ff00");
+```
+
+### setCategoryIcon
+
+Set a category's icon
+
+```js
+const icon = await gxr.getIconByName("person");
+gxr.setCategoryIcon("Person", icon);
+```
+
+### setCategoryIconByName
+
+Set a category's icon by name
+
+```js
+gxr.setCategoryIconByName("Person", "person");
+```
+
+### setCategoryVisibility
+
+```js
+gxr.setCategoryVisibility("Person", false);
+```
+
+### setRelationshipColor
+
+```js
+gxr.setRelationshipColor("KNOWS", "#00ff00");
+```
+
+### setRelationshipVisibility
+
+```js
+gxr.setRelationshipVisibility("KNOWS", false);
+```
+
+### sizeNodesByProperty
+
+```js
+gxr.sizeNodesByProperty({category: "Person", property: 'age'});
+```
+
+### traceNeighbor
+
+```js
+gxr.traceNeighbor()
+```
+
+## Transform
+
+### aggregate
+
+Pull data to root nodes from their neighborhoods up to a certain depth.
+
+```js
+gxr.aggregate({
+  formula: 'sum',
+  property: "age",
+})
+
+gxr.aggregate({
+  formula: 'concatenate',
+  separator: ",",
+  property: "name",
+  along: "KNOWS",
+  startNodeId: "A",
+  [depth: 3], // optional. Default is 1
+})
+
+gxr.aggregate({
+  // Formula can also be a function
+  formula: (values) => values.reduce((a, b) => a + b, 0),
+  ...
+}))
+```
+
+### extract
+
+```js
+gxr.extract({
+  sourceCategory: "Episodes",
+  targetCategory: "Season",
+  props: [
+    {
+      name: "seasonNumber",
+      isKey: true,
+    },
+    {
+      name: "millionViewers",
+    },
+    {
+      name: "episodeAirDate",
+    },
+  ],
+  relationship: "IN_SEASON",
+})
+```
+
+### link
+
+Create new edges between nodes which have the same value for the specified property.
+
+```js
+gxr.link({ sourceProperty: "id", targetProperty: "id" })
+
+gxr.link({
+  sourceCategory: "Roles",
+  sourceProperty: "ParentName",
+  targetCategory: "Roles",
+  targetProperty: "ComponentName",
+  relationship: "IS_PARENT_OF"
+})
+```
+
+### merge
+
+Combine nodes or edges which have equivalent key properties.
+
+```js
+gxr.merge({
+  keys: ['seasonNumber'],
+})
+
+gxr.merge({
+  category: "Episode",
+  keys: ['seasonNumber'],
+})
+
+// Combine all emails between two persons sent on the same day (thus removing directionality)
+gxr.merge({
+  relationship: "SENT_MAIL_TO"
+  keys: ['sendDate'],
+})
+
+// Combine all emails between two persons sent on the same day and preserve directionality
+gxr.merge({
+  relationship: "SENT_MAIL_TO"
+  keys: ['sendDate'],
+  directional: true,
+})
+```
+
+### mergeNodes
+
+Create new nodes, or update existing nodes, based on the specified key properties.
+
+```js
+gxr.mergeNodes({
+  data: [{ name: "Flo", age: 32 }],
+  category: "Person",
+  keys: ["name"]
+})
+```
+
+### mergeRelationships
+
+Create new edges, or update existing edges, based on the specified key properties.
+
+```js
+gxr.mergeRelationships({
+  data: [
+    { source: {name: "Flo"}, edge: {since: 2010}, target: {name: "Aiden"} },
+    { source: {name: "Flo"}, edge: {since: 2010}, target: {name: "Georgio"} },
+  ],
+  source: { category: "Person", keys: ["name"] },
+  edge: { relationship: "KNOWS", keys: ["SINCE"] },
+  target: { category: "Person", keys: ["name"] },
+})
+```
+
+### 
+
+Enables/disables quick info
+
+```js
+gxr.quickInfoEnabled(true);
+```
+
+### showQuickInfo
+
+Shows the quick info panel for the given node.
+
+```js
+gxr.showQuickInfo(gxr.nodes().at(0));
+```
+
+### hideQuickInfo
+
+Hides the quick info panel
+
+```js
+gxr.showQuickInfo(gxr.nodes().at(0));
+```
+
+### shortcut
+
+Convert A -> B -> C to A -> C
+
+```js
+gxr.shortcut({
+  incoming: 'IS_PARENT_OF',
+  center: 'Node',
+  outgoing: 'IS_PARENT_OF',
+  shortcut: "IS_GRANDPARENT_OF",
+  directional: true,
+  aggregate: [
+    {
+      sourceProperty: "age",
+      targetProperty: "averageAge",
+      formula: "average",
+    },
+  ],
+  countLinks: false,
+})
+```
+
+## Traversal
+
+### traverse
+
+```js
+for (const {node, edge, depth} of gxr.traverse({ startNodeId: "A", depth: 3 })) {
+  console.log(node, edge, depth);
+}
+```
+
+## UI
+
+### addContextMenuItem
+
+Add a custom menu item to the context menu.
+
+```js
+gxr.addContextMenuItem({
+  name: "Find Similar",
+  text: "Find Similar",
+  icon: "iconfont icon-similar",
+  hide: () => false,
+  enable: () => true,
+  action: (name, nodeId, edgeId, props) => {
+    console.log("Finding similar to", name, nodeId, edgeId, props);
+  },
+})
+```
+
+## Utility
+
+### dispatchGraphDataUpdate
+
+Force the UI to update. Sometimes necessary when using the API to update the graph.
+
+```js
+gxr.dispatchGraphDataUpdate();
+```
+
+### randomId
+
+```js
+gxr.randomId() -> "lijfsleifjzlse";
+```
+
+### sleep
+
+```js
+gxr.sleep(1000);
+```
+
+### snapshot
+
+Get the graph as JSON, or apply a JSON snapshot to the current graph.
+
+```js
+// Get snapshot
+const mySnapshot = gxr.snapshot()
+
+// Apply snapshot
+gxr.snapshot(mySnapshot)
+```
+
+### vector
+
+```js
+gxr.vector() -> Vector3 {x: 0, y: 0, z: 0}
+gxr.vector(1) -> undefined
+gxr.vector(1, 2) -> Vector2 {x: 1, y: 2}
+gxr.vector({x: 1, y: 2, z: 3}) -> Vector3 {x: 1, y: 2, z: 3}
+gxr.vector([1, 2, 3]) -> Vector3 {x: 1, y: 2, z: 3}
+gxr.vector(1, 2, 3) -> Vector3 {x: 1, y: 2, z: 3}
+gxr.vector({x: 1, y: 2, z: 3, w: 4}) -> Vector4 {x: 1, y: 2, z: 3, w: 4}
+```
+
+## User
+
+### getCurrentUser
+
+```js
+const currentUser = gxr.getCurrentUser();
+console.log(currentUser);
+```
+

@@ -125,38 +125,43 @@ function activate(context) {
 
     // Derive baseUrl from document path
     const splitPath = document.fileName.split("/");
-    const groveIndex = splitPath.indexOf(localDir);
+    const groveIndex = splitPath.indexOf(".kineviz-grove");
     const protocol = splitPath[groveIndex + 1];
     const host = splitPath[groveIndex + 2];
     const projectId = splitPath[groveIndex + 6];
     const fileName = splitPath.slice(groveIndex + 7).join("/").replace(".grove", "");
-    const baseUrl = `${protocol}://${host}`;
+    const graphxrBaseUrl = `${protocol}://${host}`;
 
     // Get api key
-    const apiKey = getApiKey(baseUrl);
+    const apiKey = getApiKey(graphxrBaseUrl);
     if (!apiKey) {
-      vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
+      vscode.window.showErrorMessage(`No API key found for ${graphxrBaseUrl}`);
       return;
     }
 
     // Parse the document content to find markdown code blocks
     const content = document.getText();
-    const codeBlockRegex = /<!--(.*)-->\n```(\w+)?\n([\s\S]*?)```/g;
+    const codeBlockRegex = /(?:<!--(.*)-->\n)?```(\w+)?\n([\s\S]*?)```/g;
     const blocks = [];
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
       const cellOptionsStr = match[1];
       const codeContent = match[3].trim();
-      const cellOptions = JSON.parse(cellOptionsStr);
+      let cellOptions = {};
+      
+      if (cellOptionsStr) {
+        cellOptions = JSON.parse(cellOptionsStr);
+      }
+
       blocks.push({
         type: "codeTool",
         data: {
           codeData: {
             value: codeContent,
-            pinCode: cellOptions.pinCode,
-            dname: cellOptions.dname,
-            codeMode: cellOptions.codeMode,
+            pinCode: cellOptions.pinCode ?? false,
+            dname: cellOptions.dname ?? crypto.randomUUID(),
+            codeMode: cellOptions.codeMode ?? "javascript2",
           },
         },
       });
@@ -180,9 +185,9 @@ function activate(context) {
     );
 
     try {
-      const url = `${baseUrl}/api/grove/simpleUploadFile`
+      const simpleUploadUrl = `${graphxrBaseUrl}/api/grove/simpleUploadFile`
       const response = await fetch(
-        url,
+        simpleUploadUrl,
         {
           method: "POST",
           headers: {
@@ -197,7 +202,7 @@ function activate(context) {
       console.log(data);
 
       // Use WebSocket for reload
-      socket = connectSocket(baseUrl);
+      socket = connectSocket(graphxrBaseUrl);
       socket.emit('requestReload', { fileName, projectId });
     } catch (error) {
       vscode.window.showErrorMessage(`Upload failed: ${error.message}`);
