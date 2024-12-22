@@ -58,7 +58,6 @@ function activate(context) {
   );
   const handleUri = async (uri) => {
     const queryParams = new URLSearchParams(uri.query);
-    vscode.window.showInformationMessage(uri);
 
     if (queryParams.has("open")) {
       const baseUrl = queryParams.get("baseUrl");
@@ -132,7 +131,6 @@ function activate(context) {
     const projectId = splitPath[groveIndex + 6];
     const fileName = splitPath.slice(groveIndex + 7).join("/").replace(".grove", "");
     const baseUrl = `${protocol}://${host}`;
-    vscode.window.showInformationMessage(JSON.stringify({baseUrl, splitPath, localDir, groveIndex, protocol, host, projectId, fileName}));
 
     // Get api key
     const apiKey = getApiKey(baseUrl);
@@ -163,7 +161,6 @@ function activate(context) {
         },
       });
     }
-    vscode.window.showInformationMessage(JSON.stringify(blocks));
 
     // Create form data
     const formData = new FormData();
@@ -184,7 +181,6 @@ function activate(context) {
 
     try {
       const url = `${baseUrl}/api/grove/simpleUploadFile`
-      vscode.window.showInformationMessage(url);
       const response = await fetch(
         url,
         {
