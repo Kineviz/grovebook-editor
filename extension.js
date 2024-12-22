@@ -1,5 +1,4 @@
 const vscode = require("vscode");
-const crypto = require('crypto');
 const io = require('socket.io-client');
 const os = require('os');
 
@@ -10,6 +9,8 @@ const ioOptions = {
   'pingInterval': 5000,
   'pingTimeout': 15000
 };
+
+const localDir = ".kineviz-grove"
 
 let socket = null;
 
@@ -47,7 +48,7 @@ function connectSocket(baseUrl) {
 function activate(context) {
   // Create ~/.grove directory if it doesn't exist
   const homedir = os.homedir();
-  const grovePath = vscode.Uri.file(`${homedir}/.grove`);
+  const grovePath = vscode.Uri.file(`${homedir}/${localDir}`);
   vscode.workspace.fs.createDirectory(grovePath);
 
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -67,7 +68,7 @@ function activate(context) {
       // Create full path structure in ~/.grove instead of /tmp
       const [protocol, host] = baseUrl.split("://");
       const homedir = os.homedir();
-      const tempFolderUri = vscode.Uri.file(`${homedir}/.grove/${protocol}/${host}/${fileName}`).fsPath;
+      const tempFolderUri = vscode.Uri.file(`${homedir}/${localDir}/${protocol}/${host}/${fileName}`).fsPath;
       const fileUri = vscode.Uri.file(`${tempFolderUri}.grove`);
       
       // Ensure all parent directories exist
@@ -119,41 +120,50 @@ function activate(context) {
 
   // Register save event listener
   const saveDisposable = vscode.workspace.onDidSaveTextDocument(async (document) => {
-    console.log("File saved:", document.fileName);
-    if (!document.fileName.endsWith(".grove")) {
+    if (!document.fileName.includes(localDir)) {
       return;
     }
 
-    // Update path parsing for ~/.grove structure
+    // Derive baseUrl from document path
     const splitPath = document.fileName.split("/");
-    const groveIndex = splitPath.indexOf('.grove');
+    const groveIndex = splitPath.indexOf(localDir);
     const protocol = splitPath[groveIndex + 1];
     const host = splitPath[groveIndex + 2];
     const projectId = splitPath[groveIndex + 6];
     const fileName = splitPath.slice(groveIndex + 7).join("/").replace(".grove", "");
+    const baseUrl = `${protocol}://${host}`;
+    vscode.window.showInformationMessage(JSON.stringify({baseUrl, splitPath, localDir, groveIndex, protocol, host, projectId, fileName}));
+
+    // Get api key
+    const apiKey = getApiKey(baseUrl);
+    if (!apiKey) {
+      vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
+      return;
+    }
 
     // Parse the document content to find markdown code blocks
     const content = document.getText();
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    const codeBlockRegex = /<!--(.*)-->\n```(\w+)?\n([\s\S]*?)```/g;
     const blocks = [];
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
-      const codeMode = match[1] || 'javascript2'; // Use specified language or default to javascript2
-      const codeContent = match[2].trim();
-      
+      const cellOptionsStr = match[1];
+      const codeContent = match[3].trim();
+      const cellOptions = JSON.parse(cellOptionsStr);
       blocks.push({
         type: "codeTool",
         data: {
           codeData: {
             value: codeContent,
-            pinCode: true,
-            dname: crypto.randomUUID(), // Generate unique ID for each block
-            codeMode: convertCodeModeMdToGrove(codeMode),
+            pinCode: cellOptions.pinCode,
+            dname: cellOptions.dname,
+            codeMode: cellOptions.codeMode,
           },
         },
       });
     }
+    vscode.window.showInformationMessage(JSON.stringify(blocks));
 
     // Create form data
     const formData = new FormData();
@@ -173,13 +183,8 @@ function activate(context) {
     );
 
     try {
-      const baseUrl = `${protocol}://${host}`;
-      const url = `${baseUrl}/api/grove/simpleUploadFile`;
-      const apiKey = getApiKey(baseUrl);
-      if (!apiKey) {
-        vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
-        return;
-      }
+      const url = `${baseUrl}/api/grove/simpleUploadFile`
+      vscode.window.showInformationMessage(url);
       const response = await fetch(
         url,
         {
@@ -210,7 +215,19 @@ function convertGroveToMd(grove) {
   const blocks = grove.blocks;
   const mdBlocks = blocks.map((block) => {
     if (block.type === "codeTool") {
-      return `\`\`\`${convertCodeModeToMd(block.data.codeData.codeMode)}\n${block.data.codeData.value}\n\`\`\``;
+      const {
+        pinCode,
+        dname,
+        codeMode,
+        value,
+      } = block.data.codeData;
+      const cellOptions = {
+        pinCode,
+        dname,
+        codeMode,
+      }
+      const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
+      return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
     }
     return block.data.text;
   });
