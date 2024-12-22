@@ -41,3 +41,7 @@ Initial release of Grovebook Editor.
 ### 1.0.1
 
 - Fixed the API Key
+
+### 1.1.0
+
+- Open file with markdown language for appropriate syntax highlighting
