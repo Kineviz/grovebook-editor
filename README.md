@@ -49,3 +49,7 @@ Initial release of Grovebook Editor.
 ### 1.2.1
 
 - Save to ~/.kineviz-grove
+
+### 1.2.2
+
+- Preserving hide flag
