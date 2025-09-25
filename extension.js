@@ -161,7 +161,8 @@ function activate(context) {
             value: codeContent,
             pinCode: cellOptions.pinCode ?? false,
             dname: cellOptions.dname ?? crypto.randomUUID(),
-            codeMode: cellOptions.codeMode ?? "javascript2",
+            codeMode: convertCodeModeMdToGrove(match[2]) || cellOptions.codeMode || "javascript2",
+            hide: cellOptions.hide ?? false,
           },
         },
       });
@@ -220,12 +221,14 @@ function convertGroveToMd(grove) {
         pinCode,
         dname,
         codeMode,
+        hide,
         value,
       } = block.data.codeData;
       const cellOptions = {
         pinCode,
         dname,
         codeMode,
+        hide,
       }
       const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
       return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
