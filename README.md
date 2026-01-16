@@ -29,6 +29,7 @@ This extension contributes the following settings:
 
 ## Contributing
 
+Update version in package.json
 vsce package
 vsce publish
 
@@ -53,3 +54,7 @@ Initial release of Grovebook Editor.
 ### 1.2.3
 
 - Preserving hide flag
+
+### 1.2.4
+
+- Experimental change to enable Windows support

@@ -1,6 +1,7 @@
 const vscode = require("vscode");
 const io = require('socket.io-client');
 const os = require('os');
+const path = require('path');
 
 const prefixAliasPath = () => "";
 
@@ -48,7 +49,7 @@ function connectSocket(baseUrl) {
 function activate(context) {
   // Create ~/.grove directory if it doesn't exist
   const homedir = os.homedir();
-  const grovePath = vscode.Uri.file(`${homedir}/${localDir}`);
+  const grovePath = vscode.Uri.file(path.join(homedir, localDir));
   vscode.workspace.fs.createDirectory(grovePath);
 
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -67,11 +68,11 @@ function activate(context) {
       // Create full path structure in ~/.grove instead of /tmp
       const [protocol, host] = baseUrl.split("://");
       const homedir = os.homedir();
-      const tempFolderUri = vscode.Uri.file(`${homedir}/${localDir}/${protocol}/${host}/${fileName}`).fsPath;
-      const fileUri = vscode.Uri.file(`${tempFolderUri}.grove`);
+      const tempFolderPath = path.join(homedir, localDir, protocol, host, ...fileName.split('/'));
+      const fileUri = vscode.Uri.file(`${tempFolderPath}.grove`);
       
       // Ensure all parent directories exist
-      const parentDir = fileUri.fsPath.substring(0, fileUri.fsPath.lastIndexOf('/'));
+      const parentDir = path.dirname(fileUri.fsPath);
       await vscode.workspace.fs.createDirectory(vscode.Uri.file(parentDir));
 
       try {
@@ -124,11 +125,12 @@ function activate(context) {
     }
 
     // Derive baseUrl from document path
-    const splitPath = document.fileName.split("/");
+    const splitPath = document.fileName.split(path.sep);
     const groveIndex = splitPath.indexOf(".kineviz-grove");
     const protocol = splitPath[groveIndex + 1];
     const host = splitPath[groveIndex + 2];
     const projectId = splitPath[groveIndex + 6];
+    // Use forward slash for URL paths (server-side expects forward slashes)
     const fileName = splitPath.slice(groveIndex + 7).join("/").replace(".grove", "");
     const graphxrBaseUrl = `${protocol}://${host}`;
 
