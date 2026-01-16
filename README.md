@@ -30,6 +30,7 @@ This extension contributes the following settings:
 ## Contributing
 
 Update version in package.json
+Get a PAT from https://dev.azure.com/
 vsce package
 vsce publish
 
