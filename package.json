@@ -2,7 +2,7 @@
   "name": "grovebook-editor",
   "displayName": "Grovebook Editor",
   "description": "",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "publisher": "kineviz",
   "repository": "https://github.com/kineviz/grovebook-editor",
   "engines": {
@@ -15,6 +15,7 @@
     "workspaceContains:*"
   ],
   "main": "./extension.js",
+  "icon": "icon.png",
   "contributes": {
     "configuration": {
       "title": "Grovebook Editor",
@@ -46,6 +47,7 @@
     "eslint": "^9.16.0"
   },
   "dependencies": {
+    "canvas": "^3.2.0",
     "socket.io-client": "^4.8.1"
   }
 }

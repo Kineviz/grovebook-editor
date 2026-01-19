@@ -59,3 +59,7 @@ Initial release of Grovebook Editor.
 ### 1.2.4
 
 - Experimental change to enable Windows support
+
+### 1.2.5
+
+- Deals with new markdown format

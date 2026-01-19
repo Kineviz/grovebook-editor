@@ -18,7 +18,7 @@ let socket = null;
 function connectSocket(baseUrl) {
   if (!socket) {
     socket = io(`${baseUrl}/groveHotReload/`, ioOptions);
-    
+
     socket.on('connect', () => {
       console.log('Connected to Grove hot reload socket');
     });
@@ -64,36 +64,46 @@ function activate(context) {
       const baseUrl = queryParams.get("baseUrl");
       const fileName = queryParams.get("open");
       const workspaceEdit = new vscode.WorkspaceEdit();
-      
+
       // Create full path structure in ~/.grove instead of /tmp
       const [protocol, host] = baseUrl.split("://");
       const homedir = os.homedir();
       const tempFolderPath = path.join(homedir, localDir, protocol, host, ...fileName.split('/'));
       const fileUri = vscode.Uri.file(`${tempFolderPath}.grove`);
-      
+
       // Ensure all parent directories exist
       const parentDir = path.dirname(fileUri.fsPath);
       await vscode.workspace.fs.createDirectory(vscode.Uri.file(parentDir));
 
       try {
         // Fetch file contents from server
-				const apiKey = getApiKey(baseUrl);
-				if (!apiKey) {
-					vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
-					return;
-				}
+        const apiKey = getApiKey(baseUrl);
+        if (!apiKey) {
+          vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
+          return;
+        }
         const response = await fetch(`${baseUrl}${fileName}`, {
           headers: {
             'x-api-key': apiKey
           }
         });
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
-        const fileContent = await response.json();
-        const mdContent = convertGroveToMd(fileContent);
+
+        const fileContentStr = await response.text();
+        let mdContent;
+        try {
+          const fileContent = JSON.parse(fileContentStr);
+          if (fileContent && fileContent.blocks) {
+            mdContent = convertGroveToMd(fileContent);
+          } else {
+            mdContent = fileContentStr;
+          }
+        } catch (e) {
+          mdContent = fileContentStr;
+        }
 
         // Create file
         workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
@@ -143,7 +153,7 @@ function activate(context) {
 
     // Parse the document content to find markdown code blocks
     const content = document.getText();
-    const codeBlockRegex = /(?:<!--(.*)-->\n)?```(\w+)?\n([\s\S]*?)```/g;
+    const codeBlockRegex = /(?:<!--(.*)-->\n)```\s?(\w+)?\n([\s\S]*?)```/g;
     const blocks = [];
     let match;
 
@@ -151,7 +161,7 @@ function activate(context) {
       const cellOptionsStr = match[1];
       const codeContent = match[3].trim();
       let cellOptions = {};
-      
+
       if (cellOptionsStr) {
         cellOptions = JSON.parse(cellOptionsStr);
       }
@@ -262,7 +272,7 @@ function convertCodeModeMdToGrove(codeMode) {
 }
 
 // This method is called when your extension is deactivated
-function deactivate() {}
+function deactivate() { }
 
 function getApiKey(origin) {
   const config = vscode.workspace.getConfiguration('grovebook');
