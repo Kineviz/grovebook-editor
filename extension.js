@@ -151,34 +151,8 @@ function activate(context) {
       return;
     }
 
-    // Parse the document content to find markdown code blocks
+    // Get raw content (keep as markdown)
     const content = document.getText();
-    const codeBlockRegex = /(?:<!--(.*)-->\n)```\s?(\w+)?\n([\s\S]*?)```/g;
-    const blocks = [];
-    let match;
-
-    while ((match = codeBlockRegex.exec(content)) !== null) {
-      const cellOptionsStr = match[1];
-      const codeContent = match[3].trim();
-      let cellOptions = {};
-
-      if (cellOptionsStr) {
-        cellOptions = JSON.parse(cellOptionsStr);
-      }
-
-      blocks.push({
-        type: "codeTool",
-        data: {
-          codeData: {
-            value: codeContent,
-            pinCode: cellOptions.pinCode ?? false,
-            dname: cellOptions.dname ?? crypto.randomUUID(),
-            codeMode: convertCodeModeMdToGrove(match[2]) || cellOptions.codeMode || "javascript2",
-            hide: cellOptions.hide ?? false,
-          },
-        },
-      });
-    }
 
     // Create form data
     const formData = new FormData();
@@ -187,12 +161,7 @@ function activate(context) {
     formData.append(
       "data",
       new Blob(
-        [
-          JSON.stringify({
-            blocks: blocks,
-            version: "2.19.1",
-          }),
-        ],
+        [content],
         { type: "text/plain" }
       )
     );
@@ -225,6 +194,100 @@ function activate(context) {
   context.subscriptions.push(saveDisposable);
 }
 
+function parseMarkdownText(text) {
+  const lines = text.split(/\r?\n/);
+  const blocks = [];
+  let currentParaLines = [];
+  let pendingMetadata = null;
+
+  function flushPara() {
+    if (currentParaLines.length > 0) {
+      const joined = currentParaLines.join('\n');
+      if (joined.trim()) {
+        blocks.push({
+          type: 'paragraph',
+          data: { text: joined }
+        });
+      }
+      currentParaLines = [];
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check for Metadata Comment
+    const metaMatch = line.match(/^<!--(.*)-->$/);
+    if (metaMatch) {
+      try {
+        const potentialMeta = JSON.parse(metaMatch[1]);
+        if (potentialMeta && (potentialMeta.type === 'header' || potentialMeta.type === 'paragraph')) {
+          flushPara();
+          pendingMetadata = potentialMeta;
+          continue; // Skip adding the comment line to content
+        }
+      } catch (e) {
+        // Not valid JSON metadata, treat as normal text
+      }
+    }
+
+    // Explicit Metadata Handling
+    if (pendingMetadata) {
+      if (pendingMetadata.type === 'header') {
+        const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+        // Even if regex fails, we trust metadata? No, header needs content. 
+        // But if user edited it to be plain text, we should respect that content but maybe force type?
+        // Let's rely on content for data, but metadata for intent.
+
+        if (headerMatch) {
+          blocks.push({
+            type: 'header',
+            data: {
+              level: pendingMetadata.level || headerMatch[1].length,
+              text: headerMatch[2].trim() // Use current text, ignore metadata text to allow edits
+            }
+          });
+          pendingMetadata = null;
+          continue;
+        } else if (line.trim() !== '') {
+          // Fallback: If metadata says header but text isn't, maybe treat as paragraph or force header?
+          // Let's treat as paragraph if syntax invalid.
+          currentParaLines.push(line);
+        }
+      } else if (pendingMetadata.type === 'paragraph') {
+        if (line.trim() !== '') {
+          currentParaLines.push(line);
+        }
+      }
+      // If line was empty, keep pendingMetadata until valid content found? 
+      // No, usually metadata immediately precedes content.
+      if (line.trim() !== '') {
+        pendingMetadata = null; // Consumed
+      }
+    } else {
+      // Heuristic Handling (Backward Compatibility)
+      const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+      if (headerMatch) {
+        flushPara();
+        blocks.push({
+          type: 'header',
+          data: {
+            level: headerMatch[1].length,
+            text: headerMatch[2].trim()
+          }
+        });
+      } else {
+        currentParaLines.push(line);
+        if (line.trim() === '') {
+          flushPara();
+        }
+      }
+    }
+  }
+  flushPara();
+  return blocks;
+}
+
 function convertGroveToMd(grove) {
   const blocks = grove.blocks;
   const mdBlocks = blocks.map((block) => {
@@ -244,10 +307,16 @@ function convertGroveToMd(grove) {
       }
       const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
       return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
+    } else if (block.type === "header") {
+      const level = block.data.level;
+      const hash = "#".repeat(level);
+      return `${hash} ${block.data.text}`;
+    } else if (block.type === "paragraph") {
+      return block.data.text;
     }
-    return block.data.text;
+    return ""; // Unknown block type default
   });
-  return mdBlocks.join("\n\n");
+  return mdBlocks.filter(x => x).join("\n\n");
 }
 
 function convertCodeModeToMd(codeMode) {
