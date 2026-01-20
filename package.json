@@ -2,7 +2,7 @@
   "name": "grovebook-editor",
   "displayName": "Grovebook Editor",
   "description": "",
-  "version": "1.2.5",
+  "version": "2.0.0",
   "publisher": "kineviz",
   "repository": "https://github.com/kineviz/grovebook-editor",
   "engines": {
@@ -36,7 +36,8 @@
   "scripts": {
     "lint": "eslint .",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "npx vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
