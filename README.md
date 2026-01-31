@@ -15,15 +15,26 @@ Edit Grovebook files in VSCode.
 
 This extension contributes the following settings:
 
-* `grovebook.apiKeys`: Map of GraphXR server origins to their corresponding API keys. For example:
-  ```json
-  {
-    "https://my-graphxr-server.com": "my-api-key",
-    "https://another-server.com": "another-api-key"
-  }
-  ```
-
 * `grovebook.enableTracing`: Enable verbose logging to the "Grovebook Hot Reload" output channel. Useful for debugging connection issues. Default: `false`
+
+## API Key Management
+
+API keys are stored securely using your operating system's credential storage:
+- **macOS**: Keychain
+- **Windows**: Credential Manager
+- **Linux**: libsecret
+
+### Commands
+
+Use the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) to access these commands:
+
+* **Grovebook: Set API Key** - Add or update an API key for a GraphXR server
+* **Grovebook: Delete API Key** - Remove a stored API key
+* **Grovebook: List API Keys** - View options for managing API keys
+
+### Migration from Previous Versions
+
+If you previously stored API keys in `settings.json` via `grovebook.apiKeys`, they will be automatically migrated to secure storage on first launch. The old keys in `settings.json` will be cleared after migration.
 
 ## Development
 
@@ -111,3 +122,9 @@ Initial release of Grovebook Editor.
 - Added success feedback message when saving grovebooks
 - Fixed socket memory leak on disconnect
 - Improved documentation
+
+### 1.4.0
+
+- **Security**: API keys are now stored securely using the OS credential manager (Keychain/Credential Manager/libsecret) instead of plain text in settings.json
+- Added commands: "Grovebook: Set API Key", "Grovebook: Delete API Key", "Grovebook: List API Keys"
+- Automatic one-time migration of existing API keys from settings to secure storage

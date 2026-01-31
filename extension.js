@@ -8,6 +8,8 @@ const path = require("path");
 // ============================================================================
 
 const EXTENSION_WORKING_DIR = ".kineviz-grove";
+const API_KEY_PREFIX = "apiKey:";
+const MIGRATION_COMPLETE_KEY = "apiKeysMigrated";
 
 const ioOptions = {
   path: "/socket.io",
@@ -17,6 +19,8 @@ const ioOptions = {
 
 const sockets = new Map(); // baseUrl -> socket
 let outputChannel = null;
+/** @type {vscode.ExtensionContext} */
+let extensionContext = null;
 
 // ============================================================================
 // Tracing
@@ -59,15 +63,32 @@ function trace(message, data = null) {
 async function activate(context) {
   trace("Grovebook extension activated");
 
+  // Store context for secret storage access
+  extensionContext = context;
+
   // Create working directory if it doesn't exist
   const homedir = os.homedir();
   const workingDir = vscode.Uri.file(path.join(homedir, EXTENSION_WORKING_DIR));
   await vscode.workspace.fs.createDirectory(workingDir);
 
+  // Migrate old API keys from settings to secure storage
+  await migrateApiKeys(context);
+
   context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }));
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(handleDocumentSave),
+  );
+
+  // Register commands for API key management
+  context.subscriptions.push(
+    vscode.commands.registerCommand("grovebook.setApiKey", handleSetApiKey),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("grovebook.deleteApiKey", handleDeleteApiKey),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("grovebook.listApiKeys", handleListApiKeys),
   );
 }
 
@@ -87,6 +108,7 @@ function deactivate() {
     outputChannel.dispose();
     outputChannel = null;
   }
+  extensionContext = null;
 }
 
 // ============================================================================
@@ -120,9 +142,9 @@ async function handleUri(uri) {
 
   try {
     // Fetch file contents from server
-    const apiKey = getApiKey(baseUrl);
+    const apiKey = await getApiKey(baseUrl);
     if (!apiKey) {
-      vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
+      vscode.window.showErrorMessage(`No API key found for ${baseUrl}. Use "Grovebook: Set API Key" command to add one.`);
       return;
     }
     const fetchUrl = `${baseUrl}${filePath}`;
@@ -179,10 +201,10 @@ async function handleDocumentSave(document) {
   trace("Parsed file path", { projectId, fileName, baseUrl: graphxrBaseUrl });
 
   // Get api key
-  const apiKey = getApiKey(graphxrBaseUrl);
+  const apiKey = await getApiKey(graphxrBaseUrl);
   if (!apiKey) {
     trace("No API key found", { baseUrl: graphxrBaseUrl });
-    vscode.window.showErrorMessage(`No API key found for ${graphxrBaseUrl}`);
+    vscode.window.showErrorMessage(`No API key found for ${graphxrBaseUrl}. Use "Grovebook: Set API Key" command to add one.`);
     return;
   }
 
@@ -453,13 +475,210 @@ function parseLocalFilePath(localFilePath) {
 }
 
 // ============================================================================
-// Configuration
+// API Key Management (Secure Storage)
 // ============================================================================
 
-function getApiKey(origin) {
+/**
+ * Retrieves an API key from secure storage.
+ * @param {string} origin - The server origin (e.g., "https://graphxr.kineviz.com")
+ * @returns {Promise<string|undefined>} - The API key or undefined if not found
+ */
+async function getApiKey(origin) {
+  if (!extensionContext) {
+    trace("Extension context not available");
+    return undefined;
+  }
+  const key = await extensionContext.secrets.get(`${API_KEY_PREFIX}${origin}`);
+  return key;
+}
+
+/**
+ * Stores an API key in secure storage.
+ * @param {string} origin - The server origin
+ * @param {string} apiKey - The API key to store
+ */
+async function setApiKey(origin, apiKey) {
+  if (!extensionContext) {
+    throw new Error("Extension context not available");
+  }
+  await extensionContext.secrets.store(`${API_KEY_PREFIX}${origin}`, apiKey);
+  trace("API key stored securely", { origin });
+}
+
+/**
+ * Deletes an API key from secure storage.
+ * @param {string} origin - The server origin
+ */
+async function deleteApiKey(origin) {
+  if (!extensionContext) {
+    throw new Error("Extension context not available");
+  }
+  await extensionContext.secrets.delete(`${API_KEY_PREFIX}${origin}`);
+  trace("API key deleted", { origin });
+}
+
+/**
+ * Migrates API keys from old settings.json storage to secure storage.
+ * This is a one-time migration that runs on first activation after the update.
+ * @param {vscode.ExtensionContext} context
+ */
+async function migrateApiKeys(context) {
+  // Check if migration has already been completed
+  const migrationComplete = context.globalState.get(MIGRATION_COMPLETE_KEY);
+  if (migrationComplete) {
+    trace("API key migration already completed");
+    return;
+  }
+
   const config = vscode.workspace.getConfiguration("grovebook");
-  const apiKeys = config.get("apiKeys");
-  return apiKeys?.[origin];
+  const oldApiKeys = config.get("apiKeys");
+
+  if (!oldApiKeys || Object.keys(oldApiKeys).length === 0) {
+    trace("No old API keys to migrate");
+    await context.globalState.update(MIGRATION_COMPLETE_KEY, true);
+    return;
+  }
+
+  trace("Migrating API keys from settings to secure storage", { 
+    count: Object.keys(oldApiKeys).length 
+  });
+
+  let migratedCount = 0;
+  const errors = [];
+
+  for (const [origin, apiKey] of Object.entries(oldApiKeys)) {
+    try {
+      await context.secrets.store(`${API_KEY_PREFIX}${origin}`, apiKey);
+      migratedCount++;
+      trace("Migrated API key", { origin });
+    } catch (error) {
+      errors.push({ origin, error: error.message });
+      trace("Failed to migrate API key", { origin, error: error.message });
+    }
+  }
+
+  // Mark migration as complete
+  await context.globalState.update(MIGRATION_COMPLETE_KEY, true);
+
+  // Clear old keys from settings (optional, but recommended for security)
+  try {
+    await config.update("apiKeys", {}, vscode.ConfigurationTarget.Global);
+    trace("Cleared old API keys from settings");
+  } catch (error) {
+    trace("Failed to clear old API keys from settings", { error: error.message });
+  }
+
+  // Notify user about migration
+  if (migratedCount > 0) {
+    vscode.window.showInformationMessage(
+      `Grovebook: Migrated ${migratedCount} API key(s) to secure storage.`
+    );
+  }
+
+  if (errors.length > 0) {
+    vscode.window.showWarningMessage(
+      `Grovebook: Failed to migrate ${errors.length} API key(s). Please re-add them using "Grovebook: Set API Key" command.`
+    );
+  }
+}
+
+/**
+ * Command handler for setting an API key.
+ */
+async function handleSetApiKey() {
+  const origin = await vscode.window.showInputBox({
+    prompt: "Enter the GraphXR server origin",
+    placeHolder: "https://graphxr.kineviz.com",
+    validateInput: (value) => {
+      if (!value) {
+        return "Origin is required";
+      }
+      try {
+        new URL(value);
+        return null;
+      } catch {
+        return "Please enter a valid URL (e.g., https://graphxr.kineviz.com)";
+      }
+    },
+  });
+
+  if (!origin) {
+    return; // User cancelled
+  }
+
+  const apiKey = await vscode.window.showInputBox({
+    prompt: `Enter the API key for ${origin}`,
+    placeHolder: "Your API key",
+    password: true, // Hide the input
+    validateInput: (value) => {
+      if (!value) {
+        return "API key is required";
+      }
+      return null;
+    },
+  });
+
+  if (!apiKey) {
+    return; // User cancelled
+  }
+
+  try {
+    await setApiKey(origin, apiKey);
+    vscode.window.showInformationMessage(`API key saved for ${origin}`);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to save API key: ${error.message}`);
+  }
+}
+
+/**
+ * Command handler for deleting an API key.
+ */
+async function handleDeleteApiKey() {
+  const origin = await vscode.window.showInputBox({
+    prompt: "Enter the GraphXR server origin to delete",
+    placeHolder: "https://graphxr.kineviz.com",
+  });
+
+  if (!origin) {
+    return; // User cancelled
+  }
+
+  // Confirm deletion
+  const confirm = await vscode.window.showWarningMessage(
+    `Are you sure you want to delete the API key for ${origin}?`,
+    { modal: true },
+    "Delete"
+  );
+
+  if (confirm !== "Delete") {
+    return; // User cancelled
+  }
+
+  try {
+    await deleteApiKey(origin);
+    vscode.window.showInformationMessage(`API key deleted for ${origin}`);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to delete API key: ${error.message}`);
+  }
+}
+
+/**
+ * Command handler for listing stored API key origins (not the keys themselves).
+ */
+async function handleListApiKeys() {
+  // Note: VS Code's SecretStorage API doesn't provide a way to list all keys,
+  // so we'll inform the user about this limitation
+  vscode.window.showInformationMessage(
+    "API keys are stored securely. Use 'Grovebook: Set API Key' to add a new key or 'Grovebook: Delete API Key' to remove one.",
+    "Set API Key",
+    "Delete API Key"
+  ).then((selection) => {
+    if (selection === "Set API Key") {
+      vscode.commands.executeCommand("grovebook.setApiKey");
+    } else if (selection === "Delete API Key") {
+      vscode.commands.executeCommand("grovebook.deleteApiKey");
+    }
+  });
 }
 
 // ============================================================================
