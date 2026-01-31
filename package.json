@@ -12,6 +12,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onUri",
     "workspaceContains:*"
   ],
   "main": "./extension.js",

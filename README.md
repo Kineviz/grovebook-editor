@@ -23,6 +23,42 @@ This extension contributes the following settings:
   }
   ```
 
+## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (version 20.x recommended)
+- [VS Code](https://code.visualstudio.com/)
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/kineviz/grovebook-editor.git
+   cd grovebook-editor
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+### Running the Extension Locally
+
+1. Open the project in VS Code
+2. Press `F5` to launch a new VS Code window with the extension loaded (or use **Run > Start Debugging**)
+3. The extension will be active in the new "Extension Development Host" window
+4. Make changes to `extension.js` and reload the window (`Cmd+R` / `Ctrl+R`) to test
+
+### Available Scripts
+
+- `npm run lint` - Run ESLint to check for code issues
+- `npm test` - Run the test suite
+
+### Debugging
+
+The project includes a VS Code launch configuration. Set breakpoints in `extension.js` and press `F5` to debug.
+
 ## Known Issues
 
 - None
