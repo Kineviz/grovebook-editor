@@ -23,6 +23,8 @@ This extension contributes the following settings:
   }
   ```
 
+* `grovebook.enableTracing`: Enable verbose logging to the "Grovebook Hot Reload" output channel. Useful for debugging connection issues. Default: `false`
+
 ## Development
 
 ### Prerequisites
@@ -59,16 +61,23 @@ This extension contributes the following settings:
 
 The project includes a VS Code launch configuration. Set breakpoints in `extension.js` and press `F5` to debug.
 
+**Runtime logging:** Enable the `grovebook.enableTracing` setting to see verbose logs in the "Grovebook Hot Reload" output channel (View > Output, then select "Grovebook Hot Reload" from the dropdown).
+
 ## Known Issues
 
 - None
 
-## Contributing
+## Releasing a New Version
 
-Update version in package.json
-Get a PAT from https://dev.azure.com/
-vsce package
-vsce publish
+1. Update the version in `package.json`
+2. Update the Release Notes section below
+3. Install vsce if needed: `npm install -g @vscode/vsce`
+4. Get a Personal Access Token from https://dev.azure.com/ (needs Marketplace > Manage scope)
+5. Package and publish:
+   ```bash
+   vsce package
+   vsce publish
+   ```
 
 ## Release Notes
 

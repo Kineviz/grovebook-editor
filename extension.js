@@ -56,7 +56,7 @@ function trace(message, data = null) {
  * Called when the extension is activated.
  * @param {vscode.ExtensionContext} context
  */
-function activate(context) {
+async function activate(context) {
   trace("Grovebook extension activated");
 
   // Create working directory if it doesn't exist
@@ -217,10 +217,16 @@ async function handleDocumentSave(document) {
     const responseText = await response.text();
     trace("Upload response", { status: response.status, body: responseText });
 
+    if (!response.ok) {
+      throw new Error(`Upload failed with status ${response.status}: ${responseText}`);
+    }
+
     // Use WebSocket for reload
     const socket = connectSocket(graphxrBaseUrl);
     trace("Emitting requestReload", { fileName, projectId });
     socket.emit("requestReload", { fileName, projectId });
+
+    vscode.window.showInformationMessage(`Grovebook saved: ${fileName}`);
   } catch (error) {
     trace("Upload failed", { error: error.message });
     vscode.window.showErrorMessage(`Upload failed: ${error.message}`);
@@ -246,6 +252,7 @@ function connectSocket(baseUrl) {
 
   socket.on("disconnect", (reason) => {
     trace("Socket disconnected", { reason, baseUrl });
+    sockets.delete(baseUrl);
   });
 
   socket.on("connect_error", (error) => {
