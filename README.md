@@ -104,3 +104,10 @@ Initial release of Grovebook Editor.
 ### 1.2.4
 
 - Experimental change to enable Windows support
+
+### 1.3.0
+
+- Reworked local file path creation to support Windows
+- Added success feedback message when saving grovebooks
+- Fixed socket memory leak on disconnect
+- Improved documentation
