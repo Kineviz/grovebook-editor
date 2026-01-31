@@ -1,21 +1,52 @@
 const vscode = require("vscode");
-const io = require('socket.io-client');
-const os = require('os');
-const path = require('path');
+const io = require("socket.io-client");
+const os = require("os");
+const path = require("path");
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const localDir = ".kineviz-grove";
+const EXTENSION_WORKING_DIR = ".kineviz-grove";
 
 const ioOptions = {
   path: "/socket.io",
-  'pingInterval': 5000,
-  'pingTimeout': 15000
+  pingInterval: 5000,
+  pingTimeout: 15000,
 };
 
-let socket = null;
+const sockets = new Map(); // baseUrl -> socket
+let outputChannel = null;
+
+// ============================================================================
+// Tracing
+// ============================================================================
+
+function getOutputChannel() {
+  if (!outputChannel) {
+    outputChannel = vscode.window.createOutputChannel("Grovebook Hot Reload");
+  }
+  return outputChannel;
+}
+
+function isTracingEnabled() {
+  const config = vscode.workspace.getConfiguration("grovebook");
+  return config.get("enableTracing", false);
+}
+
+function trace(message, data = null) {
+  if (!isTracingEnabled()) {
+    return;
+  }
+  const channel = getOutputChannel();
+  const timestamp = new Date().toISOString();
+  if (data) {
+    channel.appendLine(`[${timestamp}] ${message}: ${JSON.stringify(data)}`);
+  } else {
+    channel.appendLine(`[${timestamp}] ${message}`);
+  }
+  channel.show(true); // Show the output channel, preserving focus
+}
 
 // ============================================================================
 // Extension Lifecycle
@@ -26,17 +57,17 @@ let socket = null;
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-  // Create ~/.grove directory if it doesn't exist
+  trace("Grovebook extension activated");
+
+  // Create working directory if it doesn't exist
   const homedir = os.homedir();
-  const grovePath = vscode.Uri.file(path.join(homedir, localDir));
-  vscode.workspace.fs.createDirectory(grovePath);
+  const workingDir = vscode.Uri.file(path.join(homedir, EXTENSION_WORKING_DIR));
+  await vscode.workspace.fs.createDirectory(workingDir);
+
+  context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }));
 
   context.subscriptions.push(
-    vscode.window.registerUriHandler({ handleUri })
-  );
-
-  context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument(handleDocumentSave)
+    vscode.workspace.onDidSaveTextDocument(handleDocumentSave),
   );
 }
 
@@ -44,9 +75,17 @@ function activate(context) {
  * Called when the extension is deactivated.
  */
 function deactivate() {
-  if (socket) {
-    socket.disconnect();
-    socket = null;
+  if (sockets.size > 0) {
+    trace("Deactivating extension, disconnecting sockets", { count: sockets.size });
+    for (const [baseUrl, socket] of sockets) {
+      trace("Disconnecting socket", { baseUrl });
+      socket.disconnect();
+    }
+    sockets.clear();
+  }
+  if (outputChannel) {
+    outputChannel.dispose();
+    outputChannel = null;
   }
 }
 
@@ -66,14 +105,15 @@ async function handleUri(uri) {
   }
 
   const baseUrl = queryParams.get("baseUrl");
-  const fileName = queryParams.get("open");
-  
+  // e.g. ?baseUrl=http://localhost:3001
+  const filePath = queryParams.get("open");
+
   const workspaceEdit = new vscode.WorkspaceEdit();
-  
+
   // Create local file path for storing the grove file
-  const localFilePath = createLocalFilePath(baseUrl, fileName);
+  const localFilePath = createLocalFilePath(baseUrl, filePath);
   const fileUri = vscode.Uri.file(localFilePath);
-  
+
   // Ensure all parent directories exist
   const parentDir = path.dirname(fileUri.fsPath);
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(parentDir));
@@ -85,17 +125,17 @@ async function handleUri(uri) {
       vscode.window.showErrorMessage(`No API key found for ${baseUrl}`);
       return;
     }
-    const fetchUrl = `${baseUrl}${fileName}`;
+    const fetchUrl = `${baseUrl}${filePath}`;
     const response = await fetch(fetchUrl, {
       headers: {
-        'x-api-key': apiKey
-      }
+        "x-api-key": apiKey,
+      },
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
+
     const fileContent = await response.json();
     const mdContent = convertGroveToMd(fileContent);
 
@@ -104,7 +144,10 @@ async function handleUri(uri) {
     await vscode.workspace.applyEdit(workspaceEdit);
 
     // Write content
-    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(mdContent, 'utf8'));
+    await vscode.workspace.fs.writeFile(
+      fileUri,
+      Buffer.from(mdContent, "utf8"),
+    );
 
     // Open document
     const document = await vscode.workspace.openTextDocument(fileUri);
@@ -120,16 +163,25 @@ async function handleUri(uri) {
  * @param {vscode.TextDocument} document - The saved document
  */
 async function handleDocumentSave(document) {
-  if (!document.fileName.includes(localDir)) {
+  if (!document.fileName.includes(EXTENSION_WORKING_DIR)) {
     return;
   }
 
+  trace("Document saved", { fileName: document.fileName });
+
   // Parse local file path to get server information
-  const { projectId, fileName, baseUrl: graphxrBaseUrl } = parseLocalFilePath(document.fileName);
+  const {
+    projectId,
+    fileName,
+    baseUrl: graphxrBaseUrl,
+  } = parseLocalFilePath(document.fileName);
+
+  trace("Parsed file path", { projectId, fileName, baseUrl: graphxrBaseUrl });
 
   // Get api key
   const apiKey = getApiKey(graphxrBaseUrl);
   if (!apiKey) {
+    trace("No API key found", { baseUrl: graphxrBaseUrl });
     vscode.window.showErrorMessage(`No API key found for ${graphxrBaseUrl}`);
     return;
   }
@@ -138,38 +190,39 @@ async function handleDocumentSave(document) {
   const content = document.getText();
   const grovePayload = convertMdToGrove(content);
 
+  trace("Converted to Grove format", { blockCount: grovePayload.blocks.length });
+
   // Create form data
   const formData = new FormData();
   formData.append("fileName", fileName);
   formData.append("projectId", projectId);
   formData.append(
     "data",
-    new Blob(
-      [JSON.stringify(grovePayload)],
-      { type: "text/plain" }
-    )
+    new Blob([JSON.stringify(grovePayload)], { type: "text/plain" }),
   );
 
   try {
     const simpleUploadUrl = `${graphxrBaseUrl}/api/grove/simpleUploadFile`;
-    const response = await fetch(
-      simpleUploadUrl,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "x-api-key": apiKey,
-        },
-        body: formData,
-      }
-    );
+    trace("Uploading file", { url: simpleUploadUrl });
 
-    await response.text();
+    const response = await fetch(simpleUploadUrl, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    trace("Upload response", { status: response.status, body: responseText });
 
     // Use WebSocket for reload
-    socket = connectSocket(graphxrBaseUrl);
-    socket.emit('requestReload', { fileName, projectId });
+    const socket = connectSocket(graphxrBaseUrl);
+    trace("Emitting requestReload", { fileName, projectId });
+    socket.emit("requestReload", { fileName, projectId });
   } catch (error) {
+    trace("Upload failed", { error: error.message });
     vscode.window.showErrorMessage(`Upload failed: ${error.message}`);
   }
 }
@@ -179,12 +232,30 @@ async function handleDocumentSave(document) {
 // ============================================================================
 
 function connectSocket(baseUrl) {
-  if (!socket) {
-    const socketUrl = `${baseUrl}/groveHotReload/`;
-    socket = io(socketUrl, ioOptions);
-    socket.on('reloadResult', handleReloadResult);
-    socket.on('reloadError', handleReloadError);
+  if (sockets.has(baseUrl)) {
+    return sockets.get(baseUrl);
   }
+
+  const socketUrl = `${baseUrl}/groveHotReload/`;
+  trace("Connecting to socket", { url: socketUrl });
+  const socket = io(socketUrl, ioOptions);
+
+  socket.on("connect", () => {
+    trace("Socket connected", { id: socket.id, baseUrl });
+  });
+
+  socket.on("disconnect", (reason) => {
+    trace("Socket disconnected", { reason, baseUrl });
+  });
+
+  socket.on("connect_error", (error) => {
+    trace("Socket connection error", { error: error.message, baseUrl });
+  });
+
+  socket.on("reloadResult", handleReloadResult);
+  socket.on("reloadError", handleReloadError);
+
+  sockets.set(baseUrl, socket);
   return socket;
 }
 
@@ -193,6 +264,7 @@ function connectSocket(baseUrl) {
  * @param {object} result - The reload result from the server
  */
 function handleReloadResult(result) {
+  trace("Reload result received", result);
   if (!result.success) {
     vscode.window.showErrorMessage(`Reload failed: ${result.message}`);
   }
@@ -203,6 +275,7 @@ function handleReloadResult(result) {
  * @param {object} error - The error from the server
  */
 function handleReloadError(error) {
+  trace("Reload error received", { error: error.message });
   vscode.window.showErrorMessage(`Reload error: ${error.message}`);
 }
 
@@ -219,19 +292,13 @@ function convertGroveToMd(grove) {
   const blocks = grove.blocks;
   const mdBlocks = blocks.map((block) => {
     if (block.type === "codeTool") {
-      const {
-        pinCode,
-        dname,
-        codeMode,
-        hide,
-        value,
-      } = block.data.codeData;
+      const { pinCode, dname, codeMode, hide, value } = block.data.codeData;
       const cellOptions = {
         pinCode,
         dname,
         codeMode,
         hide,
-      }
+      };
       const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
       return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
     }
@@ -254,7 +321,7 @@ function convertMdToGrove(mdContent) {
     const cellOptionsStr = match[1];
     const codeContent = match[3].trim();
     let cellOptions = {};
-    
+
     if (cellOptionsStr) {
       try {
         cellOptions = JSON.parse(cellOptionsStr);
@@ -270,16 +337,20 @@ function convertMdToGrove(mdContent) {
           value: codeContent,
           pinCode: cellOptions.pinCode ?? false,
           dname: cellOptions.dname ?? crypto.randomUUID(),
-          codeMode: convertCodeModeMdToGrove(match[2]) || cellOptions.codeMode || "javascript2",
+          codeMode:
+            convertCodeModeMdToGrove(match[2]) ||
+            cellOptions.codeMode ||
+            "javascript2",
           hide: cellOptions.hide ?? false,
         },
       },
     };
     blocks.push(block);
   }
-  
+
   return {
     blocks: blocks,
+    // TODO: Why do we need to specify the version? And why is it hardcoded?
     version: "2.19.1",
   };
 }
@@ -318,28 +389,60 @@ function convertCodeModeMdToGrove(codeMode) {
  * @param {string} fileName - The server file path (e.g., "/api/grove/file/...")
  * @returns {string} - The local file path with .grove extension
  */
-function createLocalFilePath(baseUrl, fileName) {
-  const [protocol, host] = baseUrl.split("://");
-  const homedir = os.homedir();
-  const localFilePath = path.join(homedir, localDir, protocol, host, ...fileName.split('/')) + '.grove';
+function createLocalFilePath(baseUrl, filePath) {
+  const localFilePath =
+    path.join(
+      os.homedir(),
+      EXTENSION_WORKING_DIR,
+      encodeBaseUrl(baseUrl),
+      encodeFilePath(filePath),
+    )
   return localFilePath;
+}
+
+// Converts a baseUrl into a cross-platform (filesystem-safe) folder name
+// e.g. http://origin:3000 -> http__origin_3000
+//      https://dev.graphxr.kineviz.com -> https__dev.graphxr.kineviz.com
+function encodeBaseUrl(baseUrl) {
+  return baseUrl.replace("://", "__").replace(/:/g, "_");
+}
+
+function decodeBaseUrl(encodedBaseUrl) {
+  return encodedBaseUrl.replace("__", "://").replace(/_/g, ":");
+}
+
+function encodeFilePath(filePath) {
+  return filePath.replaceAll("/", "__");
+}
+
+function decodeFilePath(encodedFilePath) {
+  return encodedFilePath.replaceAll("__", "/");
 }
 
 /**
  * Parses a local file path to extract server information for uploading.
  * @param {string} localFilePath - The local file path
- * @returns {{protocol: string, host: string, projectId: string, fileName: string, baseUrl: string}} - Parsed components
+ * @returns {{projectId: string, fileName: string, baseUrl: string}} - Parsed components
  */
 function parseLocalFilePath(localFilePath) {
   const splitPath = localFilePath.split(path.sep);
-  const groveIndex = splitPath.indexOf(".kineviz-grove");
-  const protocol = splitPath[groveIndex + 1];
-  const host = splitPath[groveIndex + 2];
-  const projectId = splitPath[groveIndex + 6];
-  // Use forward slash for URL paths (server-side expects forward slashes)
-  const fileName = splitPath.slice(groveIndex + 7).join("/").replace(".grove", "");
-  const baseUrl = `${protocol}://${host}`;
-  return { protocol, host, projectId, fileName, baseUrl };
+  const groveIndex = splitPath.indexOf(EXTENSION_WORKING_DIR);
+
+  // groveIndex + 1 is the encoded baseUrl (e.g., "https__graphxr.kineviz.com")
+  const encodedBaseUrl = splitPath[groveIndex + 1];
+  const baseUrl = decodeBaseUrl(encodedBaseUrl);
+
+  // Everything from groveIndex + 2 onwards is the encoded filePath
+  const encodedFilePath = splitPath.slice(groveIndex + 2).join("/");
+  const filePath = decodeFilePath(encodedFilePath);
+
+  // Parse the filePath to extract projectId and fileName
+  // filePath is like "/api/grove/file/{projectId}/{fileName}"
+  const filePathParts = filePath.split("/");
+  const projectId = filePathParts[4];
+  const fileName = filePathParts.slice(5).join("/");
+
+  return { projectId, fileName, baseUrl };
 }
 
 // ============================================================================
@@ -347,8 +450,8 @@ function parseLocalFilePath(localFilePath) {
 // ============================================================================
 
 function getApiKey(origin) {
-  const config = vscode.workspace.getConfiguration('grovebook');
-  const apiKeys = config.get('apiKeys');
+  const config = vscode.workspace.getConfiguration("grovebook");
+  const apiKeys = config.get("apiKeys");
   return apiKeys?.[origin];
 }
 

@@ -28,6 +28,11 @@
           "default": {},
           "description": "Map of GraphXR server origins to their corresponding API keys",
           "scope": "resource"
+        },
+        "grovebook.enableTracing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose logging to the Grovebook Hot Reload output channel"
         }
       }
     },
