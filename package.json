@@ -2,7 +2,7 @@
   "name": "grovebook-editor",
   "displayName": "Grovebook Editor",
   "description": "",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "kineviz",
   "repository": "https://github.com/kineviz/grovebook-editor",
   "engines": {

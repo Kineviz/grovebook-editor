@@ -10,6 +10,7 @@ const path = require("path");
 const EXTENSION_WORKING_DIR = ".kineviz-grove";
 const API_KEY_PREFIX = "apiKey:";
 const MIGRATION_COMPLETE_KEY = "apiKeysMigrated";
+const PENDING_FILE_KEY = "pendingFileToOpen";
 
 const ioOptions = {
   path: "/socket.io",
@@ -74,6 +75,13 @@ async function activate(context) {
   // Migrate old API keys from settings to secure storage
   await migrateApiKeys(context);
 
+  // Check for pending file to open (from URI redirect)
+  const pendingFile = context.globalState.get(PENDING_FILE_KEY);
+  if (pendingFile) {
+    await context.globalState.update(PENDING_FILE_KEY, undefined);
+    await openGroveFile(pendingFile.baseUrl, pendingFile.filePath);
+  }
+
   context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }));
 
   context.subscriptions.push(
@@ -116,6 +124,49 @@ function deactivate() {
 // ============================================================================
 
 /**
+ * Opens a grove file from the server and displays it in the editor.
+ * @param {string} baseUrl - The server base URL
+ * @param {string} filePath - The file path on the server
+ */
+async function openGroveFile(baseUrl, filePath) {
+  const workspaceEdit = new vscode.WorkspaceEdit();
+  const localFilePath = createLocalFilePath(baseUrl, filePath);
+  const fileUri = vscode.Uri.file(localFilePath);
+
+  const parentDir = path.dirname(fileUri.fsPath);
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(parentDir));
+
+  try {
+    const apiKey = await getApiKey(baseUrl);
+    if (!apiKey) {
+      vscode.window.showErrorMessage(`No API key found for ${baseUrl}. Use "Grovebook: Set API Key" command to add one.`);
+      return;
+    }
+    const fetchUrl = `${baseUrl}${filePath}`;
+    const response = await fetch(fetchUrl, {
+      headers: { "x-api-key": apiKey },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const fileContent = await response.json();
+    const mdContent = convertGroveToMd(fileContent);
+
+    workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
+    await vscode.workspace.applyEdit(workspaceEdit);
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(mdContent, "utf8"));
+
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    await vscode.languages.setTextDocumentLanguage(document, "markdown");
+    await vscode.window.showTextDocument(document);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to fetch file: ${error.message}`);
+  }
+}
+
+/**
  * Handles URI events to open grove files from the server.
  * @param {vscode.Uri} uri - The URI containing query parameters
  */
@@ -127,57 +178,22 @@ async function handleUri(uri) {
   }
 
   const baseUrl = queryParams.get("baseUrl");
-  // e.g. ?baseUrl=http://localhost:3001
   const filePath = queryParams.get("open");
 
-  const workspaceEdit = new vscode.WorkspaceEdit();
+  // Check if we're in the working directory workspace
+  const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
+  const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-  // Create local file path for storing the grove file
-  const localFilePath = createLocalFilePath(baseUrl, filePath);
-  const fileUri = vscode.Uri.file(localFilePath);
-
-  // Ensure all parent directories exist
-  const parentDir = path.dirname(fileUri.fsPath);
-  await vscode.workspace.fs.createDirectory(vscode.Uri.file(parentDir));
-
-  try {
-    // Fetch file contents from server
-    const apiKey = await getApiKey(baseUrl);
-    if (!apiKey) {
-      vscode.window.showErrorMessage(`No API key found for ${baseUrl}. Use "Grovebook: Set API Key" command to add one.`);
-      return;
-    }
-    const fetchUrl = `${baseUrl}${filePath}`;
-    const response = await fetch(fetchUrl, {
-      headers: {
-        "x-api-key": apiKey,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const fileContent = await response.json();
-    const mdContent = convertGroveToMd(fileContent);
-
-    // Create file
-    workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
-    await vscode.workspace.applyEdit(workspaceEdit);
-
-    // Write content
-    await vscode.workspace.fs.writeFile(
-      fileUri,
-      Buffer.from(mdContent, "utf8"),
-    );
-
-    // Open document
-    const document = await vscode.workspace.openTextDocument(fileUri);
-    await vscode.languages.setTextDocumentLanguage(document, "markdown");
-    await vscode.window.showTextDocument(document);
-  } catch (error) {
-    vscode.window.showErrorMessage(`Failed to fetch file: ${error.message}`);
+  if (currentFolder !== workingDirPath) {
+    // Store pending file info and open working directory
+    await extensionContext.globalState.update(PENDING_FILE_KEY, { baseUrl, filePath });
+    const workingDir = vscode.Uri.file(workingDirPath);
+    await vscode.commands.executeCommand('vscode.openFolder', workingDir);
+    return; // Window will reload, activate() will handle opening the file
   }
+
+  // Already in working directory, open the file directly
+  await openGroveFile(baseUrl, filePath);
 }
 
 /**

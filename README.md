@@ -5,6 +5,7 @@ Edit Grovebook files in VSCode.
 ## Features
 
 - Open Grovebook files in VSCode
+- Automatically opens a dedicated workspace (`~/.kineviz-grove`) when editing grovebooks, keeping all your grove files organized in one place
 
 ## Requirements
 
@@ -128,3 +129,7 @@ Initial release of Grovebook Editor.
 - **Security**: API keys are now stored securely using the OS credential manager (Keychain/Credential Manager/libsecret) instead of plain text in settings.json
 - Added commands: "Grovebook: Set API Key", "Grovebook: Delete API Key", "Grovebook: List API Keys"
 - Automatic one-time migration of existing API keys from settings to secure storage
+
+### 1.5.0
+
+- Automatically opens the `~/.kineviz-grove` workspace when opening a grovebook via URI, keeping all grove files organized in one dedicated workspace
