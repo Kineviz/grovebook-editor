@@ -141,3 +141,7 @@ Initial release of Grovebook Editor.
 ### 1.5.2
 
 - Fixed: Opening multiple grovebooks now opens each in a new tab instead of replacing the existing tab
+
+### 1.5.5
+
+- Fixed: Opening a grovebook via URL now reliably opens the file when the correct workspace window is already open but not focused

@@ -76,16 +76,18 @@ async function activate(context) {
   await migrateApiKeys(context);
 
   // Check for pending file to open (from URI redirect)
-  const pendingFile = context.globalState.get(PENDING_FILE_KEY);
-  if (pendingFile) {
-    await context.globalState.update(PENDING_FILE_KEY, undefined);
-    await openGroveFile(pendingFile.baseUrl, pendingFile.filePath);
-  }
+  await checkAndOpenPendingFile();
 
   context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }));
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(handleDocumentSave),
+  );
+
+  // Listen for window focus changes to pick up pending files from other windows
+  // This handles the case where another window stored a pending file and focused this window
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState(handleWindowStateChange),
   );
 
   // Register commands for API key management
@@ -122,6 +124,70 @@ function deactivate() {
 // ============================================================================
 // Event Handlers
 // ============================================================================
+
+/**
+ * Checks if we're in the working directory and opens any pending file.
+ * This is called on activation and when the window gains focus.
+ * @returns {boolean} - True if a pending file was found and opened
+ */
+async function checkAndOpenPendingFile() {
+  const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
+  const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+  // Only process pending files if we're in the working directory
+  if (currentFolder !== workingDirPath) {
+    trace("Not in working directory, skipping pending file check", { currentFolder, workingDirPath });
+    return false;
+  }
+
+  const pendingFile = extensionContext.globalState.get(PENDING_FILE_KEY);
+  if (pendingFile) {
+    trace("Found pending file to open", pendingFile);
+    await extensionContext.globalState.update(PENDING_FILE_KEY, undefined);
+    await openGroveFile(pendingFile.baseUrl, pendingFile.filePath);
+    return true;
+  }
+  
+  trace("No pending file found");
+  return false;
+}
+
+/**
+ * Helper function to wait for a specified number of milliseconds.
+ * @param {number} ms - Milliseconds to wait
+ */
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Handles window state changes (focus gained/lost).
+ * When this window gains focus and we're in the working directory,
+ * check for pending files that another window may have stored.
+ * Uses retry logic to handle globalState sync delays between windows.
+ * @param {vscode.WindowState} windowState
+ */
+async function handleWindowStateChange(windowState) {
+  if (windowState.focused) {
+    trace("Window gained focus, checking for pending files");
+    
+    // Try immediately first
+    let found = await checkAndOpenPendingFile();
+    if (found) return;
+    
+    // Retry with delays to handle globalState sync between windows
+    // globalState may not sync instantly between VS Code windows
+    const retryDelays = [100, 200, 500];
+    for (const delayMs of retryDelays) {
+      await delay(delayMs);
+      found = await checkAndOpenPendingFile();
+      if (found) {
+        trace("Found pending file after retry", { delayMs });
+        return;
+      }
+    }
+  }
+}
 
 /**
  * Opens a grove file from the server and displays it in the editor.
@@ -179,20 +245,43 @@ async function handleUri(uri) {
 
   const baseUrl = queryParams.get("baseUrl");
   const filePath = queryParams.get("open");
+  const isRetry = queryParams.get("retry") === "1";
 
   // Check if we're in the working directory workspace
   const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
   const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   if (currentFolder !== workingDirPath) {
-    // Store pending file info and open working directory in a new window
+    trace("Not in working directory, focusing/opening correct workspace", { currentFolder, workingDirPath, isRetry });
+    
+    // Store pending file info as a fallback (for onDidChangeWindowState handler)
     await extensionContext.globalState.update(PENDING_FILE_KEY, { baseUrl, filePath });
+    
+    // Open/focus the working directory workspace
     const workingDir = vscode.Uri.file(workingDirPath);
     await vscode.commands.executeCommand('vscode.openFolder', workingDir, { forceNewWindow: true });
-    return; // New window will open, activate() there will handle opening the file
+    
+    // Only re-trigger URI if this isn't already a retry (prevents infinite loops)
+    if (!isRetry) {
+      // Wait for the window focus to change, then re-trigger the URI
+      // This ensures the correct window (which is now focused) handles the file open
+      await delay(500);
+      
+      // Re-trigger the URI - this will be handled by whichever window is now focused
+      // If the correct workspace window is focused, it will open the file directly
+      // Use vscode.env.uriScheme to get the correct scheme (vscode, cursor, vscode-insiders, etc.)
+      const uriScheme = vscode.env.uriScheme;
+      const extensionUri = vscode.Uri.parse(
+        `${uriScheme}://kineviz.grovebook-editor?open=${encodeURIComponent(filePath)}&baseUrl=${encodeURIComponent(baseUrl)}&retry=1`
+      );
+      trace("Re-triggering URI for focused window", { uri: extensionUri.toString(), uriScheme });
+      await vscode.env.openExternal(extensionUri);
+    }
+    return;
   }
 
-  // Already in working directory, open the file directly
+  // Already in working directory, clear any pending file and open directly
+  await extensionContext.globalState.update(PENDING_FILE_KEY, undefined);
   await openGroveFile(baseUrl, filePath);
 }
 
