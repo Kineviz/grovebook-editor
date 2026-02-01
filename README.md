@@ -133,3 +133,11 @@ Initial release of Grovebook Editor.
 ### 1.5.0
 
 - Automatically opens the `~/.kineviz-grove` workspace when opening a grovebook via URI, keeping all grove files organized in one dedicated workspace
+
+### 1.5.1
+
+- Fixed: Opening a grovebook now opens in a new window instead of replacing the current workspace
+
+### 1.5.2
+
+- Fixed: Opening multiple grovebooks now opens each in a new tab instead of replacing the existing tab

@@ -160,7 +160,7 @@ async function openGroveFile(baseUrl, filePath) {
 
     const document = await vscode.workspace.openTextDocument(fileUri);
     await vscode.languages.setTextDocumentLanguage(document, "markdown");
-    await vscode.window.showTextDocument(document);
+    await vscode.window.showTextDocument(document, { preview: false });
   } catch (error) {
     vscode.window.showErrorMessage(`Failed to fetch file: ${error.message}`);
   }
@@ -185,11 +185,11 @@ async function handleUri(uri) {
   const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   if (currentFolder !== workingDirPath) {
-    // Store pending file info and open working directory
+    // Store pending file info and open working directory in a new window
     await extensionContext.globalState.update(PENDING_FILE_KEY, { baseUrl, filePath });
     const workingDir = vscode.Uri.file(workingDirPath);
-    await vscode.commands.executeCommand('vscode.openFolder', workingDir);
-    return; // Window will reload, activate() will handle opening the file
+    await vscode.commands.executeCommand('vscode.openFolder', workingDir, { forceNewWindow: true });
+    return; // New window will open, activate() there will handle opening the file
   }
 
   // Already in working directory, open the file directly
