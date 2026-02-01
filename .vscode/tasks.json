@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Ensure working directory exists",
+			"type": "shell",
+			"command": "mkdir -p ${userHome}/.kineviz-grove",
+			"presentation": {
+				"reveal": "silent",
+				"close": true
+			},
+			"problemMatcher": []
+		}
+	]
+}

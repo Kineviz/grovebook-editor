@@ -1,0 +1,1 @@
+- [ ] Create github action to build and publish the extension to the VS Code Marketplace when a new tag is pushed. It should also create a release on GitHub.

@@ -2,7 +2,7 @@
   "name": "grovebook-editor",
   "displayName": "Grovebook Editor",
   "description": "",
-  "version": "1.5.5",
+  "version": "1.6.0",
   "publisher": "kineviz",
   "repository": "https://github.com/kineviz/grovebook-editor",
   "engines": {
@@ -33,6 +33,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable verbose logging to the Grovebook Hot Reload output channel"
+        },
+        "grovebook.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sync changes to remote server after a short delay (1.5s)"
         }
       }
     },

@@ -23,6 +23,20 @@ let outputChannel = null;
 /** @type {vscode.ExtensionContext} */
 let extensionContext = null;
 
+// Auto-sync state
+/** @type {vscode.StatusBarItem} */
+let statusBarItem = null;
+const lastSyncedContent = new Map(); // uri -> content
+const changeDebounceTimers = new Map(); // uri -> timer
+const DEBOUNCE_MS = 1500; // Wait 1.5s after last change before auto-save
+
+// Sync status states
+const SyncStatus = {
+  SYNCED: "synced",
+  MODIFIED: "modified",
+  SYNCING: "syncing",
+};
+
 // ============================================================================
 // Tracing
 // ============================================================================
@@ -54,6 +68,82 @@ function trace(message, data = null) {
 }
 
 // ============================================================================
+// Status Bar Management
+// ============================================================================
+
+/**
+ * Creates and initializes the status bar item.
+ * @param {vscode.ExtensionContext} context
+ */
+function createStatusBar(context) {
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+  statusBarItem.name = "Grovebook Sync Status";
+  context.subscriptions.push(statusBarItem);
+  updateStatusBar(SyncStatus.SYNCED);
+}
+
+/**
+ * Updates the status bar with the current sync state.
+ * @param {string} status - One of SyncStatus values
+ */
+function updateStatusBar(status) {
+  if (!statusBarItem) return;
+
+  switch (status) {
+    case SyncStatus.SYNCED:
+      statusBarItem.text = "$(check) Grovebook: Synced";
+      statusBarItem.tooltip = "Local content matches remote";
+      statusBarItem.backgroundColor = undefined;
+      break;
+    case SyncStatus.MODIFIED:
+      statusBarItem.text = "$(cloud-upload) Grovebook: Modified";
+      statusBarItem.tooltip = "Local changes pending sync";
+      statusBarItem.backgroundColor = new vscode.ThemeColor(
+        "statusBarItem.warningBackground"
+      );
+      break;
+    case SyncStatus.SYNCING:
+      statusBarItem.text = "$(sync~spin) Grovebook: Syncing...";
+      statusBarItem.tooltip = "Uploading changes to remote";
+      statusBarItem.backgroundColor = undefined;
+      break;
+  }
+}
+
+/**
+ * Shows or hides the status bar based on whether the active document is a grove file.
+ */
+function updateStatusBarVisibility() {
+  const activeEditor = vscode.window.activeTextEditor;
+  if (activeEditor && isGroveDocument(activeEditor.document)) {
+    statusBarItem?.show();
+  } else {
+    statusBarItem?.hide();
+  }
+}
+
+/**
+ * Checks if a document is a grove file in the working directory.
+ * @param {vscode.TextDocument} document
+ * @returns {boolean}
+ */
+function isGroveDocument(document) {
+  return document.fileName.includes(EXTENSION_WORKING_DIR);
+}
+
+/**
+ * Checks if auto-sync is enabled in settings.
+ * @returns {boolean}
+ */
+function isAutoSyncEnabled() {
+  const config = vscode.workspace.getConfiguration("grovebook");
+  return config.get("autoSync", true);
+}
+
+// ============================================================================
 // Extension Lifecycle
 // ============================================================================
 
@@ -82,6 +172,19 @@ async function activate(context) {
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(handleDocumentSave),
+  );
+
+  // Listen for document changes to enable auto-sync
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument(handleDocumentChange),
+  );
+
+  // Create status bar for sync status
+  createStatusBar(context);
+
+  // Update status bar visibility when active editor changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(updateStatusBarVisibility),
   );
 
   // Listen for window focus changes to pick up pending files from other windows
@@ -118,6 +221,14 @@ function deactivate() {
     outputChannel.dispose();
     outputChannel = null;
   }
+  // Clear debounce timers
+  for (const timer of changeDebounceTimers.values()) {
+    clearTimeout(timer);
+  }
+  changeDebounceTimers.clear();
+  lastSyncedContent.clear();
+  // Status bar is disposed via context.subscriptions
+  statusBarItem = null;
   extensionContext = null;
 }
 
@@ -190,6 +301,85 @@ async function handleWindowStateChange(windowState) {
 }
 
 /**
+ * Handles document change events for auto-sync functionality.
+ * Debounces changes and triggers auto-save after the debounce period.
+ * @param {vscode.TextDocumentChangeEvent} event
+ */
+function handleDocumentChange(event) {
+  const document = event.document;
+  
+  // Only process grove files
+  if (!isGroveDocument(document)) {
+    return;
+  }
+
+  // Ignore if no actual content changes
+  if (event.contentChanges.length === 0) {
+    return;
+  }
+
+  // Check if auto-sync is enabled
+  if (!isAutoSyncEnabled()) {
+    return;
+  }
+
+  const uri = document.uri.toString();
+  trace("Document changed", { fileName: document.fileName });
+
+  // Check if content differs from last synced
+  const currentContent = document.getText();
+  const lastContent = lastSyncedContent.get(uri);
+  
+  if (lastContent !== undefined && currentContent === lastContent) {
+    // Content matches last synced, nothing to do
+    updateStatusBar(SyncStatus.SYNCED);
+    return;
+  }
+
+  // Content has changed, update status bar
+  updateStatusBar(SyncStatus.MODIFIED);
+
+  // Clear existing debounce timer for this file
+  if (changeDebounceTimers.has(uri)) {
+    clearTimeout(changeDebounceTimers.get(uri));
+  }
+
+  // Set new debounce timer
+  const timer = setTimeout(() => {
+    changeDebounceTimers.delete(uri);
+    autoSaveDocument(document);
+  }, DEBOUNCE_MS);
+
+  changeDebounceTimers.set(uri, timer);
+}
+
+/**
+ * Automatically saves a document to trigger the upload workflow.
+ * @param {vscode.TextDocument} document
+ */
+async function autoSaveDocument(document) {
+  // Check if document is still open and not already saved
+  if (document.isClosed) {
+    trace("Document closed before auto-save", { fileName: document.fileName });
+    return;
+  }
+
+  if (!document.isDirty) {
+    trace("Document not dirty, skipping auto-save", { fileName: document.fileName });
+    return;
+  }
+
+  trace("Auto-saving document", { fileName: document.fileName });
+  
+  try {
+    await document.save();
+  } catch (error) {
+    trace("Auto-save failed", { error: error.message });
+    vscode.window.showErrorMessage(`Auto-save failed: ${error.message}`);
+  }
+}
+
+/**
  * Opens a grove file from the server and displays it in the editor.
  * @param {string} baseUrl - The server base URL
  * @param {string} filePath - The file path on the server
@@ -227,6 +417,11 @@ async function openGroveFile(baseUrl, filePath) {
     const document = await vscode.workspace.openTextDocument(fileUri);
     await vscode.languages.setTextDocumentLanguage(document, "markdown");
     await vscode.window.showTextDocument(document, { preview: false });
+
+    // Initialize synced content tracking
+    lastSyncedContent.set(document.uri.toString(), mdContent);
+    updateStatusBar(SyncStatus.SYNCED);
+    updateStatusBarVisibility();
   } catch (error) {
     vscode.window.showErrorMessage(`Failed to fetch file: ${error.message}`);
   }
@@ -290,11 +485,14 @@ async function handleUri(uri) {
  * @param {vscode.TextDocument} document - The saved document
  */
 async function handleDocumentSave(document) {
-  if (!document.fileName.includes(EXTENSION_WORKING_DIR)) {
+  if (!isGroveDocument(document)) {
     return;
   }
 
   trace("Document saved", { fileName: document.fileName });
+
+  // Update status bar to show syncing
+  updateStatusBar(SyncStatus.SYNCING);
 
   // Parse local file path to get server information
   const {
@@ -310,6 +508,7 @@ async function handleDocumentSave(document) {
   if (!apiKey) {
     trace("No API key found", { baseUrl: graphxrBaseUrl });
     vscode.window.showErrorMessage(`No API key found for ${graphxrBaseUrl}. Use "Grovebook: Set API Key" command to add one.`);
+    updateStatusBar(SyncStatus.MODIFIED);
     return;
   }
 
@@ -353,10 +552,19 @@ async function handleDocumentSave(document) {
     trace("Emitting requestReload", { fileName, projectId });
     socket.emit("requestReload", { fileName, projectId });
 
+    // Update synced content tracking
+    const uri = document.uri.toString();
+    lastSyncedContent.set(uri, content);
+    
+    // Update status bar to synced
+    updateStatusBar(SyncStatus.SYNCED);
+
     vscode.window.showInformationMessage(`Grovebook saved: ${fileName}`);
   } catch (error) {
     trace("Upload failed", { error: error.message });
     vscode.window.showErrorMessage(`Upload failed: ${error.message}`);
+    // Revert status bar to modified on failure
+    updateStatusBar(SyncStatus.MODIFIED);
   }
 }
 

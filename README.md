@@ -6,6 +6,8 @@ Edit Grovebook files in VSCode.
 
 - Open Grovebook files in VSCode
 - Automatically opens a dedicated workspace (`~/.kineviz-grove`) when editing grovebooks, keeping all your grove files organized in one place
+- **Auto-sync**: Changes are automatically synced to the remote server after 1.5 seconds of inactivity (works with Cursor Agent and other tools that modify files)
+- **Status bar indicator**: Shows sync status (Synced/Modified/Syncing) when editing grovebook files
 
 ## Requirements
 
@@ -16,6 +18,7 @@ Edit Grovebook files in VSCode.
 
 This extension contributes the following settings:
 
+* `grovebook.autoSync`: Automatically sync changes to the remote server after a short delay (1.5s). This enables seamless editing with Cursor Agent and other tools. Default: `true`
 * `grovebook.enableTracing`: Enable verbose logging to the "Grovebook Hot Reload" output channel. Useful for debugging connection issues. Default: `false`
 
 ## API Key Management
@@ -145,3 +148,9 @@ Initial release of Grovebook Editor.
 ### 1.5.5
 
 - Fixed: Opening a grovebook via URL now reliably opens the file when the correct workspace window is already open but not focused
+
+### 1.6.0
+
+- **Auto-sync**: Changes are now automatically synced to the remote server after 1.5 seconds of inactivity, enabling seamless editing with Cursor Agent and other tools that modify files without triggering manual save
+- **Status bar indicator**: Added a status bar item that shows sync status (Synced/Modified/Syncing) when editing grovebook files
+- Added `grovebook.autoSync` setting to enable/disable auto-sync (default: enabled)
