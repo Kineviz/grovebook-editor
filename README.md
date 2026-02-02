@@ -154,3 +154,7 @@ Initial release of Grovebook Editor.
 - **Auto-sync**: Changes are now automatically synced to the remote server after 1.5 seconds of inactivity, enabling seamless editing with Cursor Agent and other tools that modify files without triggering manual save
 - **Status bar indicator**: Added a status bar item that shows sync status (Synced/Modified/Syncing) when editing grovebook files
 - Added `grovebook.autoSync` setting to enable/disable auto-sync (default: enabled)
+
+### 1.6.1
+
+- **Windows fix**: Fixed path comparison issues on Windows where drive letter casing differences (e.g., `c:\` vs `C:\`) caused the extension to fail to recognize the working directory
