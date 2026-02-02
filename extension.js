@@ -246,7 +246,10 @@ async function checkAndOpenPendingFile() {
   const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   // Only process pending files if we're in the working directory
-  if (currentFolder !== workingDirPath) {
+  // Use case-insensitive comparison on Windows since paths are case-insensitive
+  const normalizedCurrentFolder = currentFolder?.toLowerCase();
+  const normalizedWorkingDir = workingDirPath.toLowerCase();
+  if (normalizedCurrentFolder !== normalizedWorkingDir) {
     trace("Not in working directory, skipping pending file check", { currentFolder, workingDirPath });
     return false;
   }
@@ -446,7 +449,10 @@ async function handleUri(uri) {
   const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
   const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-  if (currentFolder !== workingDirPath) {
+  // Use case-insensitive comparison on Windows since paths are case-insensitive
+  const normalizedCurrentFolder = currentFolder?.toLowerCase();
+  const normalizedWorkingDir = workingDirPath.toLowerCase();
+  if (normalizedCurrentFolder !== normalizedWorkingDir) {
     trace("Not in working directory, focusing/opening correct workspace", { currentFolder, workingDirPath, isRetry });
     
     // Store pending file info as a fallback (for onDidChangeWindowState handler)
