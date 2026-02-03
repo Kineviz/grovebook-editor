@@ -18,7 +18,7 @@ Edit Grovebook files in VSCode.
 
 This extension contributes the following settings:
 
-* `grovebook.autoSync`: Automatically sync changes to the remote server after a short delay (1.5s). This enables seamless editing with Cursor Agent and other tools. Default: `true`
+* `grovebook.autoSync`: Automatically sync changes to the remote server after a short delay (1.5s). This enables seamless editing with Cursor Agent and other tools. Default: `false`
 * `grovebook.enableTracing`: Enable verbose logging to the "Grovebook Hot Reload" output channel. Useful for debugging connection issues. Default: `false`
 
 ## API Key Management
@@ -96,6 +96,12 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
 
 ## Release Notes
 
+### Unreleased
+
+- **Backup on download**: When a grovebook is downloaded from the server, a timestamped backup is automatically saved in a `backups` folder next to the file (e.g. `~/.kineviz-grove/.../backups/<filename>-<timestamp>.md`).
+- **Auto-sync off by default**: The `grovebook.autoSync` setting now defaults to `false`. Enable it in settings to automatically sync changes to the remote server after editing.
+- **Fixed**: Status bar now correctly shows "Modified" when there are unsaved changes, even when auto-sync is disabled. Switching to a grove tab with unsaved changes also updates the status immediately.
+
 ### 1.0.0
 
 Initial release of Grovebook Editor.
@@ -158,3 +164,11 @@ Initial release of Grovebook Editor.
 ### 1.6.1
 
 - **Windows fix**: Fixed path comparison issues on Windows where drive letter casing differences (e.g., `c:\` vs `C:\`) caused the extension to fail to recognize the working directory
+
+### 2.0.0
+
+- **Markdown support**: Files are now stored as markdown on Grove >= 2.0.0 servers, enabling better editing with syntax highlighting for headers, paragraphs, and code blocks
+- **Backward compatibility**: Automatically detects Grove server version and uses legacy JSON format for servers < 2.0.0
+- **Improved Grove-to-Markdown conversion**: Now properly handles header and paragraph block types when downloading files
+- **Extension icon**: Added an icon for the extension
+- **Package script**: Added `npm run package` command for building the extension

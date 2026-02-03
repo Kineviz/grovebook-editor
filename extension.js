@@ -19,6 +19,7 @@ const ioOptions = {
 };
 
 const sockets = new Map(); // baseUrl -> socket
+const groveVersionCache = new Map(); // baseUrl -> version string
 let outputChannel = null;
 /** @type {vscode.ExtensionContext} */
 let extensionContext = null;
@@ -114,11 +115,28 @@ function updateStatusBar(status) {
 }
 
 /**
+ * Returns the sync status for a grove document (content vs last synced).
+ * @param {vscode.TextDocument} document
+ * @returns {string} SyncStatus.SYNCED or SyncStatus.MODIFIED
+ */
+function getSyncStatusForDocument(document) {
+  const uri = document.uri.toString();
+  const currentContent = document.getText();
+  const lastContent = lastSyncedContent.get(uri);
+  if (lastContent !== undefined && currentContent === lastContent) {
+    return SyncStatus.SYNCED;
+  }
+  return SyncStatus.MODIFIED;
+}
+
+/**
  * Shows or hides the status bar based on whether the active document is a grove file.
+ * When showing, updates the status (Synced/Modified) to match the active document.
  */
 function updateStatusBarVisibility() {
   const activeEditor = vscode.window.activeTextEditor;
   if (activeEditor && isGroveDocument(activeEditor.document)) {
+    updateStatusBar(getSyncStatusForDocument(activeEditor.document));
     statusBarItem?.show();
   } else {
     statusBarItem?.hide();
@@ -140,7 +158,7 @@ function isGroveDocument(document) {
  */
 function isAutoSyncEnabled() {
   const config = vscode.workspace.getConfiguration("grovebook");
-  return config.get("autoSync", true);
+  return config.get("autoSync", false);
 }
 
 // ============================================================================
@@ -227,6 +245,7 @@ function deactivate() {
   }
   changeDebounceTimers.clear();
   lastSyncedContent.clear();
+  groveVersionCache.clear();
   // Status bar is disposed via context.subscriptions
   statusBarItem = null;
   extensionContext = null;
@@ -305,12 +324,12 @@ async function handleWindowStateChange(windowState) {
 
 /**
  * Handles document change events for auto-sync functionality.
- * Debounces changes and triggers auto-save after the debounce period.
+ * Always updates status bar (Modified/Synced); when auto-sync is on, debounces and triggers auto-save.
  * @param {vscode.TextDocumentChangeEvent} event
  */
 function handleDocumentChange(event) {
   const document = event.document;
-  
+
   // Only process grove files
   if (!isGroveDocument(document)) {
     return;
@@ -321,26 +340,22 @@ function handleDocumentChange(event) {
     return;
   }
 
-  // Check if auto-sync is enabled
+  const uri = document.uri.toString();
+
+  // Always update status bar based on content vs last synced (even when auto-sync is off)
+  const currentContent = document.getText();
+  const lastContent = lastSyncedContent.get(uri);
+
+  if (lastContent !== undefined && currentContent === lastContent) {
+    updateStatusBar(SyncStatus.SYNCED);
+  } else {
+    updateStatusBar(SyncStatus.MODIFIED);
+  }
+
+  // When auto-sync is off, only the status bar was updated; no debounce/auto-save
   if (!isAutoSyncEnabled()) {
     return;
   }
-
-  const uri = document.uri.toString();
-  trace("Document changed", { fileName: document.fileName });
-
-  // Check if content differs from last synced
-  const currentContent = document.getText();
-  const lastContent = lastSyncedContent.get(uri);
-  
-  if (lastContent !== undefined && currentContent === lastContent) {
-    // Content matches last synced, nothing to do
-    updateStatusBar(SyncStatus.SYNCED);
-    return;
-  }
-
-  // Content has changed, update status bar
-  updateStatusBar(SyncStatus.MODIFIED);
 
   // Clear existing debounce timer for this file
   if (changeDebounceTimers.has(uri)) {
@@ -410,12 +425,39 @@ async function openGroveFile(baseUrl, filePath) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const fileContent = await response.json();
-    const mdContent = convertGroveToMd(fileContent);
+    // Detect if content is already markdown or needs conversion from Grove JSON
+    const fileContentStr = await response.text();
+    let mdContent;
+
+    try {
+      const fileContent = JSON.parse(fileContentStr);
+      // If it's valid JSON with a blocks array, convert Grove to markdown
+      if (fileContent && fileContent.blocks) {
+        trace("Downloaded Grove JSON, converting to markdown");
+        mdContent = convertGroveToMd(fileContent);
+      } else {
+        // Valid JSON but not Grove format - treat as raw content
+        trace("Downloaded JSON without blocks, using as-is");
+        mdContent = fileContentStr;
+      }
+    } catch (e) {
+      // Not JSON - already markdown, use directly
+      trace("Downloaded content is not JSON, using as markdown");
+      mdContent = fileContentStr;
+    }
 
     workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
     await vscode.workspace.applyEdit(workspaceEdit);
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(mdContent, "utf8"));
+
+    // Always save a timestamped backup when a grovebook is downloaded
+    const backupDir = path.join(parentDir, "backups");
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(backupDir));
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupBasename = `${path.basename(localFilePath)}-${timestamp}.md`;
+    const backupUri = vscode.Uri.file(path.join(backupDir, backupBasename));
+    await vscode.workspace.fs.writeFile(backupUri, Buffer.from(mdContent, "utf8"));
+    trace("Saved backup", { path: backupUri.fsPath });
 
     const document = await vscode.workspace.openTextDocument(fileUri);
     await vscode.languages.setTextDocumentLanguage(document, "markdown");
@@ -518,20 +560,28 @@ async function handleDocumentSave(document) {
     return;
   }
 
-  // Convert markdown content to Grove JSON format
+  // Get content and determine upload format based on Grove version
   const content = document.getText();
-  const grovePayload = convertMdToGrove(content);
+  const groveVersion = await getGroveVersion(graphxrBaseUrl, apiKey);
+  const useDirectMarkdown = isVersionAtLeast(groveVersion, "2.0.0");
 
-  trace("Converted to Grove format", { blockCount: grovePayload.blocks.length });
+  trace("Upload format decision", { groveVersion, useDirectMarkdown });
+
+  let contentToUpload;
+  if (useDirectMarkdown) {
+    contentToUpload = content;
+    trace("Using direct markdown upload");
+  } else {
+    const grovePayload = convertMdToGrove(content);
+    trace("Converted to Grove format", { blockCount: grovePayload.blocks.length });
+    contentToUpload = JSON.stringify(grovePayload);
+  }
 
   // Create form data
   const formData = new FormData();
   formData.append("fileName", fileName);
   formData.append("projectId", projectId);
-  formData.append(
-    "data",
-    new Blob([JSON.stringify(grovePayload)], { type: "text/plain" }),
-  );
+  formData.append("data", new Blob([contentToUpload], { type: "text/plain" }));
 
   try {
     const simpleUploadUrl = `${graphxrBaseUrl}/api/grove/simpleUploadFile`;
@@ -641,18 +691,19 @@ function convertGroveToMd(grove) {
   const mdBlocks = blocks.map((block) => {
     if (block.type === "codeTool") {
       const { pinCode, dname, codeMode, hide, value } = block.data.codeData;
-      const cellOptions = {
-        pinCode,
-        dname,
-        codeMode,
-        hide,
-      };
+      const cellOptions = { pinCode, dname, codeMode, hide };
       const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
       return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
+    } else if (block.type === "header") {
+      const level = block.data.level;
+      const hash = "#".repeat(level);
+      return `${hash} ${block.data.text}`;
+    } else if (block.type === "paragraph") {
+      return block.data.text;
     }
-    return block.data.text;
+    return block.data.text || "";
   });
-  return mdBlocks.join("\n\n");
+  return mdBlocks.filter((x) => x).join("\n\n");
 }
 
 /**
@@ -791,6 +842,54 @@ function parseLocalFilePath(localFilePath) {
   const fileName = filePathParts.slice(5).join("/");
 
   return { projectId, fileName, baseUrl };
+}
+
+// ============================================================================
+// Grove Version Detection
+// ============================================================================
+
+/**
+ * Fetches and caches the Grove module version from a server.
+ * @param {string} baseUrl - The server base URL
+ * @param {string} apiKey - The API key for authentication
+ * @returns {Promise<string>} - The Grove version (defaults to "1.0.0" if not found)
+ */
+async function getGroveVersion(baseUrl, apiKey) {
+  if (groveVersionCache.has(baseUrl)) {
+    return groveVersionCache.get(baseUrl);
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/api/tempModule/tempModules`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const data = await response.json();
+    const groveModule = data.content?.find((m) => m.name === "Grove");
+    const version = groveModule?.version || "1.0.0";
+
+    trace("Fetched Grove version", { baseUrl, version });
+    groveVersionCache.set(baseUrl, version);
+    return version;
+  } catch (error) {
+    trace("Failed to fetch Grove version, defaulting to 1.0.0", { error: error.message });
+    return "1.0.0";
+  }
+}
+
+/**
+ * Checks if a version is at least the minimum required version.
+ * @param {string} version - The version to check (e.g., "2.1.0")
+ * @param {string} minVersion - The minimum version required (e.g., "2.0.0")
+ * @returns {boolean} - True if version >= minVersion
+ */
+function isVersionAtLeast(version, minVersion) {
+  const v = version.split(".").map(Number);
+  const min = minVersion.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((v[i] || 0) > (min[i] || 0)) return true;
+    if ((v[i] || 0) < (min[i] || 0)) return false;
+  }
+  return true;
 }
 
 // ============================================================================

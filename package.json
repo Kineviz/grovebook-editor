@@ -2,7 +2,7 @@
   "name": "grovebook-editor",
   "displayName": "Grovebook Editor",
   "description": "",
-  "version": "1.6.1",
+  "version": "2.0.0",
   "publisher": "kineviz",
   "repository": "https://github.com/kineviz/grovebook-editor",
   "engines": {
@@ -16,6 +16,7 @@
     "workspaceContains:*"
   ],
   "main": "./extension.js",
+  "icon": "icon.png",
   "contributes": {
     "configuration": {
       "title": "Grovebook Editor",
@@ -36,7 +37,7 @@
         },
         "grovebook.autoSync": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Automatically sync changes to remote server after a short delay (1.5s)"
         }
       }
@@ -59,7 +60,8 @@
   "scripts": {
     "lint": "eslint .",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "npx vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
