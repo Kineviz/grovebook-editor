@@ -96,6 +96,14 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
 
 ## Release Notes
 
+### 2.0.3
+
+- Empty
+
+### 2.0.2
+
+- Empty
+
 ### 2.0.1
 
 - **Backup on download**: When a grovebook is downloaded from the server, a timestamped backup is automatically saved in a `backups` folder next to the file (e.g. `~/.kineviz-grove/.../backups/<filename>-<timestamp>.md`).
