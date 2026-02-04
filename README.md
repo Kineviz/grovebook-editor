@@ -96,74 +96,11 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
 
 ## Release Notes
 
-### Unreleased
+### 2.0.1
 
 - **Backup on download**: When a grovebook is downloaded from the server, a timestamped backup is automatically saved in a `backups` folder next to the file (e.g. `~/.kineviz-grove/.../backups/<filename>-<timestamp>.md`).
 - **Auto-sync off by default**: The `grovebook.autoSync` setting now defaults to `false`. Enable it in settings to automatically sync changes to the remote server after editing.
 - **Fixed**: Status bar now correctly shows "Modified" when there are unsaved changes, even when auto-sync is disabled. Switching to a grove tab with unsaved changes also updates the status immediately.
-
-### 1.0.0
-
-Initial release of Grovebook Editor.
-
-### 1.0.1
-
-- Fixed the API Key
-
-### 1.1.0
-
-- Open file with markdown language for appropriate syntax highlighting
-
-### 1.2.1
-
-- Save to ~/.kineviz-grove
-
-### 1.2.3
-
-- Preserving hide flag
-
-### 1.2.4
-
-- Experimental change to enable Windows support
-
-### 1.3.0
-
-- Reworked local file path creation to support Windows
-- Added success feedback message when saving grovebooks
-- Fixed socket memory leak on disconnect
-- Improved documentation
-
-### 1.4.0
-
-- **Security**: API keys are now stored securely using the OS credential manager (Keychain/Credential Manager/libsecret) instead of plain text in settings.json
-- Added commands: "Grovebook: Set API Key", "Grovebook: Delete API Key", "Grovebook: List API Keys"
-- Automatic one-time migration of existing API keys from settings to secure storage
-
-### 1.5.0
-
-- Automatically opens the `~/.kineviz-grove` workspace when opening a grovebook via URI, keeping all grove files organized in one dedicated workspace
-
-### 1.5.1
-
-- Fixed: Opening a grovebook now opens in a new window instead of replacing the current workspace
-
-### 1.5.2
-
-- Fixed: Opening multiple grovebooks now opens each in a new tab instead of replacing the existing tab
-
-### 1.5.5
-
-- Fixed: Opening a grovebook via URL now reliably opens the file when the correct workspace window is already open but not focused
-
-### 1.6.0
-
-- **Auto-sync**: Changes are now automatically synced to the remote server after 1.5 seconds of inactivity, enabling seamless editing with Cursor Agent and other tools that modify files without triggering manual save
-- **Status bar indicator**: Added a status bar item that shows sync status (Synced/Modified/Syncing) when editing grovebook files
-- Added `grovebook.autoSync` setting to enable/disable auto-sync (default: enabled)
-
-### 1.6.1
-
-- **Windows fix**: Fixed path comparison issues on Windows where drive letter casing differences (e.g., `c:\` vs `C:\`) caused the extension to fail to recognize the working directory
 
 ### 2.0.0
 
@@ -172,3 +109,66 @@ Initial release of Grovebook Editor.
 - **Improved Grove-to-Markdown conversion**: Now properly handles header and paragraph block types when downloading files
 - **Extension icon**: Added an icon for the extension
 - **Package script**: Added `npm run package` command for building the extension
+
+### 1.6.1
+
+- **Windows fix**: Fixed path comparison issues on Windows where drive letter casing differences (e.g., `c:\` vs `C:\`) caused the extension to fail to recognize the working directory
+
+### 1.6.0
+
+- **Auto-sync**: Changes are now automatically synced to the remote server after 1.5 seconds of inactivity, enabling seamless editing with Cursor Agent and other tools that modify files without triggering manual save
+- **Status bar indicator**: Added a status bar item that shows sync status (Synced/Modified/Syncing) when editing grovebook files
+- Added `grovebook.autoSync` setting to enable/disable auto-sync (default: enabled)
+
+### 1.5.5
+
+- Fixed: Opening a grovebook via URL now reliably opens the file when the correct workspace window is already open but not focused
+
+### 1.5.2
+
+- Fixed: Opening multiple grovebooks now opens each in a new tab instead of replacing the existing tab
+
+### 1.5.1
+
+- Fixed: Opening a grovebook now opens in a new window instead of replacing the current workspace
+
+### 1.5.0
+
+- Automatically opens the `~/.kineviz-grove` workspace when opening a grovebook via URI, keeping all grove files organized in one dedicated workspace
+
+### 1.4.0
+
+- **Security**: API keys are now stored securely using the OS credential manager (Keychain/Credential Manager/libsecret) instead of plain text in settings.json
+- Added commands: "Grovebook: Set API Key", "Grovebook: Delete API Key", "Grovebook: List API Keys"
+- Automatic one-time migration of existing API keys from settings to secure storage
+
+### 1.3.0
+
+- Reworked local file path creation to support Windows
+- Added success feedback message when saving grovebooks
+- Fixed socket memory leak on disconnect
+- Improved documentation
+
+### 1.2.4
+
+- Experimental change to enable Windows support
+
+### 1.2.3
+
+- Preserving hide flag
+
+### 1.2.1
+
+- Save to ~/.kineviz-grove
+
+### 1.1.0
+
+- Open file with markdown language for appropriate syntax highlighting
+
+### 1.0.1
+
+- Fixed the API Key
+
+### 1.0.0
+
+Initial release of Grovebook Editor.
