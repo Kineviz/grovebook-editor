@@ -429,21 +429,27 @@ async function openGroveFile(baseUrl, filePath) {
     const fileContentStr = await response.text();
     let mdContent;
 
-    try {
-      const fileContent = JSON.parse(fileContentStr);
-      // If it's valid JSON with a blocks array, convert Grove to markdown
-      if (fileContent && fileContent.blocks) {
-        trace("Downloaded Grove JSON, converting to markdown");
-        mdContent = convertGroveToMd(fileContent);
-      } else {
-        // Valid JSON but not Grove format - treat as raw content
-        trace("Downloaded JSON without blocks, using as-is");
+    // If file extension is .md, use direct markdown (2.0 format)
+    if (filePath.toLowerCase().endsWith('.md')) {
+      trace("File extension is .md, using direct markdown (2.0 format)");
+      mdContent = fileContentStr;
+    } else {
+      try {
+        const fileContent = JSON.parse(fileContentStr);
+        // If it's valid JSON with a blocks array, convert Grove to markdown
+        if (fileContent && fileContent.blocks) {
+          trace("Downloaded Grove JSON, converting to markdown");
+          mdContent = convertGroveToMd(fileContent);
+        } else {
+          // Valid JSON but not Grove format - treat as raw content
+          trace("Downloaded JSON without blocks, using as-is");
+          mdContent = fileContentStr;
+        }
+      } catch (e) {
+        // Not JSON - already markdown, use directly
+        trace("Downloaded content is not JSON, using as markdown");
         mdContent = fileContentStr;
       }
-    } catch (e) {
-      // Not JSON - already markdown, use directly
-      trace("Downloaded content is not JSON, using as markdown");
-      mdContent = fileContentStr;
     }
 
     workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
@@ -560,17 +566,20 @@ async function handleDocumentSave(document) {
     return;
   }
 
-  // Get content and determine upload format based on Grove version
+  // Get content and determine upload format based on file extension or Grove version
   const content = document.getText();
+  
+  // If file extension is .md, use direct markdown (2.0 format) regardless of server version
+  const isMdFile = fileName.toLowerCase().endsWith('.md');
   const groveVersion = await getGroveVersion(graphxrBaseUrl, apiKey);
-  const useDirectMarkdown = isVersionAtLeast(groveVersion, "2.0.0");
-
-  trace("Upload format decision", { groveVersion, useDirectMarkdown });
+  const useDirectMarkdown = isMdFile || isVersionAtLeast(groveVersion, "2.0.0");
+  
+  trace("Upload format decision", { fileName, isMdFile, groveVersion, useDirectMarkdown });
 
   let contentToUpload;
   if (useDirectMarkdown) {
     contentToUpload = content;
-    trace("Using direct markdown upload");
+    trace(isMdFile ? "Using direct markdown upload (file extension is .md)" : "Using direct markdown upload");
   } else {
     const grovePayload = convertMdToGrove(content);
     trace("Converted to Grove format", { blockCount: grovePayload.blocks.length });

@@ -10,10 +10,10 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"preLaunchTask": "Ensure working directory exists",
-			"args": [
-				"${userHome}/.kineviz-grove",
-				"--extensionDevelopmentPath=${workspaceFolder}"
-			]
+		"args": [
+			"${env:HOME}/.kineviz-grove",
+			"--extensionDevelopmentPath=${workspaceFolder}"
+		]
 		}
 	]
 }

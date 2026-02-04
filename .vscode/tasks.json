@@ -4,7 +4,7 @@
 		{
 			"label": "Ensure working directory exists",
 			"type": "shell",
-			"command": "mkdir -p ${userHome}/.kineviz-grove",
+			"command": "mkdir -p ${env:HOME}/.kineviz-grove",
 			"presentation": {
 				"reveal": "silent",
 				"close": true
