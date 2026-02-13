@@ -78,21 +78,33 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
 
 **Runtime logging:** Enable the `grovebook.enableTracing` setting to see verbose logs in the "Grovebook Hot Reload" output channel (View > Output, then select "Grovebook Hot Reload" from the dropdown).
 
+## Contributing
+
+1. **Fork and clone** the repository
+2. **Create a branch** for your changes (`git checkout -b fix/your-fix` or `feature/your-feature`)
+3. **Make your changes** and run `npm run lint` and `npm test` before committing
+4. **Update `CHANGELOG.md`** under `[Unreleased]` (or add that section if missing) with your changes, following the [Keep a Changelog](https://keepachangelog.com/) format
+5. **Commit** with a clear message and **open a pull request**
+
 ## Known Issues
 
 - None
 
 ## Releasing a New Version
 
-1. Update the version in `package.json`
-2. Update the Release Notes section below
-3. Install vsce if needed: `npm install -g @vscode/vsce`
-4. Get a Personal Access Token from https://dev.azure.com/ (needs Marketplace > Manage scope)
-5. Package and publish:
+1. **Bump the version** in `package.json` (e.g., `2.0.5` → `2.0.6`)
+2. **Update `CHANGELOG.md`** – add a new `[X.Y.Z] - YYYY-MM-DD` section with the changes, and move any `[Unreleased]` items into it
+3. **Update the Release Notes** section below in this README
+4. **Commit and push** the version bump
+5. **Create and push a version tag** – the GitHub Action will automatically build the `.vsix` and create a GitHub release:
    ```bash
-   vsce package
-   vsce publish
+   git tag v2.0.6
+   git push origin v2.0.6
    ```
+6. **Publish to VS Code Marketplace** (maintainers only):
+   - Install vsce if needed: `npm install -g @vscode/vsce`
+   - Get a Personal Access Token from https://dev.azure.com/ (needs Marketplace > Manage scope)
+   - Download the `.vsix` from the GitHub release, then: `vsce publish`
 
 ## Release Notes
 
