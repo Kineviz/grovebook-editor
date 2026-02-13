@@ -106,6 +106,8 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
    - Get a Personal Access Token from https://dev.azure.com/ (needs Marketplace > Manage scope)
    - Download the `.vsix` from the GitHub release, then: `vsce publish`
 
+**Optional – Slack notifications:** Add a `SLACK_WEBHOOK_URL` repository secret (Settings → Secrets and variables → Actions) with an [Incoming Webhook](https://api.slack.com/messaging/webhooks) URL to receive a Slack notification when new releases are published.
+
 ## Release Notes
 
 ### 2.0.5

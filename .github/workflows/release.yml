@@ -42,3 +42,31 @@ jobs:
             *.vsix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Slack
+        if: secrets.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "📦 New grovebook-editor Release", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Version:*\n'${{ steps.version.outputs.VERSION }}'" },
+                    { "type": "mrkdwn", "text": "*Repository:*\n${{ github.repository }}" }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}|View release on GitHub>"
+                  }
+                }
+              ]
+            }' \
+            "${{ secrets.SLACK_WEBHOOK_URL }}"
