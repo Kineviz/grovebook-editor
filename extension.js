@@ -19,7 +19,6 @@ const ioOptions = {
 };
 
 const sockets = new Map(); // baseUrl -> socket
-const groveVersionCache = new Map(); // baseUrl -> version string
 let outputChannel = null;
 /** @type {vscode.ExtensionContext} */
 let extensionContext = null;
@@ -245,7 +244,6 @@ function deactivate() {
   }
   changeDebounceTimers.clear();
   lastSyncedContent.clear();
-  groveVersionCache.clear();
   // Status bar is disposed via context.subscriptions
   statusBarItem = null;
   extensionContext = null;
@@ -398,11 +396,56 @@ async function autoSaveDocument(document) {
 }
 
 /**
+ * Validates that a file path is acceptable for opening as a grovebook.
+ * Only .md files are supported.
+ * @param {string} filePath - The file path to validate
+ * @returns {{ valid: boolean, reason?: string }}
+ */
+function validateGrovebookFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== ".md") {
+    const reason = !ext
+      ? "Legacy Grovebooks (JSON) without an extension are not supported. Please upgrade Grove to 2.x and re-open the file to migrate it to the new format."
+      : ext === ".grove"
+        ? "Legacy .grove (JSON) files are not supported. Please upgrade Grove to 2.x and re-open the file to migrate it to the new format."
+        : `Only .md Grovebooks are supported.`;
+    return { valid: false, reason };
+  }
+  return { valid: true };
+}
+
+/**
+ * Returns true if content appears to be markdown (not JSON or other non-markdown format).
+ * Rejects content that parses as JSON, e.g. legacy Grove format.
+ * @param {string} content - The file content to check
+ * @returns {boolean}
+ */
+function isMarkdownContent(content) {
+  const trimmed = content.trim();
+  if (!trimmed) return true;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return false; // Valid JSON, not markdown
+    } catch {
+      return true; // Not valid JSON, treat as markdown
+    }
+  }
+  return true;
+}
+
+/**
  * Opens a grove file from the server and displays it in the editor.
  * @param {string} baseUrl - The server base URL
  * @param {string} filePath - The file path on the server
  */
 async function openGroveFile(baseUrl, filePath) {
+  const validation = validateGrovebookFile(filePath);
+  if (!validation.valid) {
+    vscode.window.showErrorMessage(validation.reason);
+    return;
+  }
+
   const workspaceEdit = new vscode.WorkspaceEdit();
   const localFilePath = createLocalFilePath(baseUrl, filePath);
   const fileUri = vscode.Uri.file(localFilePath);
@@ -425,33 +468,11 @@ async function openGroveFile(baseUrl, filePath) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    // Detect if content is already markdown or needs conversion from Grove JSON
-    const fileContentStr = await response.text();
-    let mdContent;
-
-    // If file extension is .md, use direct markdown (2.0 format)
-    if (filePath.toLowerCase().endsWith('.md')) {
-      trace("File extension is .md, using direct markdown (2.0 format)");
-      mdContent = fileContentStr;
-    } else {
-      try {
-        const fileContent = JSON.parse(fileContentStr);
-        // If it's valid JSON with a blocks array, convert Grove to markdown
-        if (fileContent && fileContent.blocks) {
-          trace("Downloaded Grove JSON, converting to markdown");
-          mdContent = convertGroveToMd(fileContent);
-        } else {
-          // Valid JSON but not Grove format - treat as raw content
-          trace("Downloaded JSON without blocks, using as-is");
-          mdContent = fileContentStr;
-        }
-      } catch (e) {
-        // Not JSON - already markdown, use directly
-        trace("Downloaded content is not JSON, using as markdown");
-        mdContent = fileContentStr;
-      }
+    const mdContent = await response.text();
+    if (!isMarkdownContent(mdContent)) {
+      vscode.window.showErrorMessage("Legacy .grove (JSON) files are not supported. Please upgrade Grove to 2.x to continue.");
+      return;
     }
-
     workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
     await vscode.workspace.applyEdit(workspaceEdit);
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(mdContent, "utf8"));
@@ -492,6 +513,12 @@ async function handleUri(uri) {
   const baseUrl = queryParams.get("baseUrl");
   const filePath = queryParams.get("open");
   const isRetry = queryParams.get("retry") === "1";
+
+  const validation = validateGrovebookFile(filePath);
+  if (!validation.valid) {
+    vscode.window.showErrorMessage(validation.reason);
+    return;
+  }
 
   // Check if we're in the working directory workspace
   const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
@@ -566,25 +593,7 @@ async function handleDocumentSave(document) {
     return;
   }
 
-  // Get content and determine upload format based on file extension or Grove version
-  const content = document.getText();
-  
-  // If file extension is .md, use direct markdown (2.0 format) regardless of server version
-  const isMdFile = fileName.toLowerCase().endsWith('.md');
-  const groveVersion = await getGroveVersion(graphxrBaseUrl, apiKey);
-  const useDirectMarkdown = isMdFile || isVersionAtLeast(groveVersion, "2.0.0");
-  
-  trace("Upload format decision", { fileName, isMdFile, groveVersion, useDirectMarkdown });
-
-  let contentToUpload;
-  if (useDirectMarkdown) {
-    contentToUpload = content;
-    trace(isMdFile ? "Using direct markdown upload (file extension is .md)" : "Using direct markdown upload");
-  } else {
-    const grovePayload = convertMdToGrove(content);
-    trace("Converted to Grove format", { blockCount: grovePayload.blocks.length });
-    contentToUpload = JSON.stringify(grovePayload);
-  }
+  const contentToUpload = document.getText();
 
   // Create form data
   const formData = new FormData();
@@ -619,10 +628,11 @@ async function handleDocumentSave(document) {
 
     // Update synced content tracking
     const uri = document.uri.toString();
-    lastSyncedContent.set(uri, content);
+    lastSyncedContent.set(uri, contentToUpload);
     
     // Update status bar to synced
     updateStatusBar(SyncStatus.SYNCED);
+    trace("Updated status bar to synced", { fileName });
 
     vscode.window.showInformationMessage(`Grovebook saved: ${fileName}`);
   } catch (error) {
@@ -687,107 +697,6 @@ function handleReloadError(error) {
 }
 
 // ============================================================================
-// Format Conversion
-// ============================================================================
-
-/**
- * Converts Grove JSON format to Markdown for editing in VS Code.
- * @param {object} grove - The grove file content with blocks array
- * @returns {string} - Markdown string representation
- */
-function convertGroveToMd(grove) {
-  const blocks = grove.blocks;
-  const mdBlocks = blocks.map((block) => {
-    if (block.type === "codeTool") {
-      const { pinCode, dname, codeMode, hide, value } = block.data.codeData;
-      const cellOptions = { pinCode, dname, codeMode, hide };
-      const cellOptionsStr = `<!--${JSON.stringify(cellOptions)}-->`;
-      return `${cellOptionsStr}\n\`\`\`${convertCodeModeToMd(codeMode)}\n${value}\n\`\`\``;
-    } else if (block.type === "header") {
-      const level = block.data.level;
-      const hash = "#".repeat(level);
-      return `${hash} ${block.data.text}`;
-    } else if (block.type === "paragraph") {
-      return block.data.text;
-    }
-    return block.data.text || "";
-  });
-  return mdBlocks.filter((x) => x).join("\n\n");
-}
-
-/**
- * Converts Markdown content back to Grove JSON format for uploading to the server.
- * @param {string} mdContent - The markdown content
- * @returns {object} - Grove format object with blocks array and version
- */
-function convertMdToGrove(mdContent) {
-  const codeBlockRegex = /(?:<!--(.*)-->\n)?```(\w+)?\n([\s\S]*?)```/g;
-  const blocks = [];
-  let match;
-
-  while ((match = codeBlockRegex.exec(mdContent)) !== null) {
-    const cellOptionsStr = match[1];
-    const codeContent = match[3].trim();
-    let cellOptions = {};
-
-    if (cellOptionsStr) {
-      try {
-        cellOptions = JSON.parse(cellOptionsStr);
-      } catch (parseError) {
-        // Ignore parse errors for cell options
-      }
-    }
-
-    const block = {
-      type: "codeTool",
-      data: {
-        codeData: {
-          value: codeContent,
-          pinCode: cellOptions.pinCode ?? false,
-          dname: cellOptions.dname ?? crypto.randomUUID(),
-          codeMode:
-            convertCodeModeMdToGrove(match[2]) ||
-            cellOptions.codeMode ||
-            "javascript2",
-          hide: cellOptions.hide ?? false,
-        },
-      },
-    };
-    blocks.push(block);
-  }
-
-  return {
-    blocks: blocks,
-    // TODO: Why do we need to specify the version? And why is it hardcoded?
-    version: "2.19.1",
-  };
-}
-
-/**
- * Convert Grove code mode to markdown language tag for syntax highlighting.
- */
-function convertCodeModeToMd(codeMode) {
-  switch (codeMode) {
-    case "javascript2":
-      return "js";
-    default:
-      return codeMode;
-  }
-}
-
-/**
- * Convert markdown language tag back to Grove code mode.
- */
-function convertCodeModeMdToGrove(codeMode) {
-  switch (codeMode) {
-    case "js":
-      return "javascript2";
-    default:
-      return codeMode;
-  }
-}
-
-// ============================================================================
 // Path Utilities
 // ============================================================================
 
@@ -795,7 +704,7 @@ function convertCodeModeMdToGrove(codeMode) {
  * Creates a local file path for storing a grove file downloaded from the server.
  * @param {string} baseUrl - The base URL (e.g., "https://graphxr.kineviz.com")
  * @param {string} fileName - The server file path (e.g., "/api/grove/file/...")
- * @returns {string} - The local file path with .grove extension
+ * @returns {string} - The local file path (preserves server filename, e.g. .md)
  */
 function createLocalFilePath(baseUrl, filePath) {
   const localFilePath =
@@ -851,54 +760,6 @@ function parseLocalFilePath(localFilePath) {
   const fileName = filePathParts.slice(5).join("/");
 
   return { projectId, fileName, baseUrl };
-}
-
-// ============================================================================
-// Grove Version Detection
-// ============================================================================
-
-/**
- * Fetches and caches the Grove module version from a server.
- * @param {string} baseUrl - The server base URL
- * @param {string} apiKey - The API key for authentication
- * @returns {Promise<string>} - The Grove version (defaults to "1.0.0" if not found)
- */
-async function getGroveVersion(baseUrl, apiKey) {
-  if (groveVersionCache.has(baseUrl)) {
-    return groveVersionCache.get(baseUrl);
-  }
-
-  try {
-    const response = await fetch(`${baseUrl}/api/tempModule/tempModules`, {
-      headers: { "x-api-key": apiKey },
-    });
-    const data = await response.json();
-    const groveModule = data.content?.find((m) => m.name === "Grove");
-    const version = groveModule?.version || "1.0.0";
-
-    trace("Fetched Grove version", { baseUrl, version });
-    groveVersionCache.set(baseUrl, version);
-    return version;
-  } catch (error) {
-    trace("Failed to fetch Grove version, defaulting to 1.0.0", { error: error.message });
-    return "1.0.0";
-  }
-}
-
-/**
- * Checks if a version is at least the minimum required version.
- * @param {string} version - The version to check (e.g., "2.1.0")
- * @param {string} minVersion - The minimum version required (e.g., "2.0.0")
- * @returns {boolean} - True if version >= minVersion
- */
-function isVersionAtLeast(version, minVersion) {
-  const v = version.split(".").map(Number);
-  const min = minVersion.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if ((v[i] || 0) > (min[i] || 0)) return true;
-    if ((v[i] || 0) < (min[i] || 0)) return false;
-  }
-  return true;
 }
 
 // ============================================================================
