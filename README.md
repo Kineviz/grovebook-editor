@@ -96,6 +96,10 @@ The project includes a VS Code launch configuration. Set breakpoints in `extensi
 
 ## Release Notes
 
+### 2.0.5
+
+- (No user-facing changes in this release)
+
 ### 2.0.4
 
 - **Deprecated**: The old Grovebook `.grove` extension JSON format (used by Grove servers < 2.0.0) is now deprecated. Please upgrade to Grove >= 2.0.0 for markdown support. The extension will continue to support legacy servers for backward compatibility, but this support may be removed in a future release.
