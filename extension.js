@@ -8,6 +8,7 @@ const path = require("path");
 // ============================================================================
 
 const EXTENSION_WORKING_DIR = ".kineviz-grove";
+const UPGRADE_MSG = "Please upgrade Grove to 2.x and re-open the file to migrate it to the new format.";
 const API_KEY_PREFIX = "apiKey:";
 const MIGRATION_COMPLETE_KEY = "apiKeysMigrated";
 const PENDING_FILE_KEY = "pendingFileToOpen";
@@ -174,10 +175,7 @@ async function activate(context) {
   // Store context for secret storage access
   extensionContext = context;
 
-  // Create working directory if it doesn't exist
-  const homedir = os.homedir();
-  const workingDir = vscode.Uri.file(path.join(homedir, EXTENSION_WORKING_DIR));
-  await vscode.workspace.fs.createDirectory(workingDir);
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(getWorkingDirPath()));
 
   // Migrate old API keys from settings to secure storage
   await migrateApiKeys(context);
@@ -253,21 +251,21 @@ function deactivate() {
 // Event Handlers
 // ============================================================================
 
+function isInWorkingDirectory() {
+  const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath?.toLowerCase();
+  return currentFolder === getWorkingDirPath().toLowerCase();
+}
+
 /**
- * Checks if we're in the working directory and opens any pending file.
- * This is called on activation and when the window gains focus.
- * @returns {boolean} - True if a pending file was found and opened
+ * Opens any pending file if we're in the working directory. Called on activation and when the window gains focus.
+ * @returns {Promise<boolean>} - True if a pending file was found and opened
  */
 async function checkAndOpenPendingFile() {
-  const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
-  const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
-  // Only process pending files if we're in the working directory
-  // Use case-insensitive comparison on Windows since paths are case-insensitive
-  const normalizedCurrentFolder = currentFolder?.toLowerCase();
-  const normalizedWorkingDir = workingDirPath.toLowerCase();
-  if (normalizedCurrentFolder !== normalizedWorkingDir) {
-    trace("Not in working directory, skipping pending file check", { currentFolder, workingDirPath });
+  if (!isInWorkingDirectory()) {
+    trace("Not in working directory, skipping pending file check", {
+      currentFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      workingDirPath: getWorkingDirPath(),
+    });
     return false;
   }
 
@@ -333,29 +331,12 @@ function handleDocumentChange(event) {
     return;
   }
 
-  // Ignore if no actual content changes
-  if (event.contentChanges.length === 0) {
-    return;
-  }
+  if (event.contentChanges.length === 0) return;
+
+  updateStatusBar(getSyncStatusForDocument(document));
+  if (!isAutoSyncEnabled()) return;
 
   const uri = document.uri.toString();
-
-  // Always update status bar based on content vs last synced (even when auto-sync is off)
-  const currentContent = document.getText();
-  const lastContent = lastSyncedContent.get(uri);
-
-  if (lastContent !== undefined && currentContent === lastContent) {
-    updateStatusBar(SyncStatus.SYNCED);
-  } else {
-    updateStatusBar(SyncStatus.MODIFIED);
-  }
-
-  // When auto-sync is off, only the status bar was updated; no debounce/auto-save
-  if (!isAutoSyncEnabled()) {
-    return;
-  }
-
-  // Clear existing debounce timer for this file
   if (changeDebounceTimers.has(uri)) {
     clearTimeout(changeDebounceTimers.get(uri));
   }
@@ -405,10 +386,10 @@ function validateGrovebookFile(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== ".md") {
     const reason = !ext
-      ? "Legacy Grovebooks (JSON) without an extension are not supported. Please upgrade Grove to 2.x and re-open the file to migrate it to the new format."
+      ? `Legacy Grovebooks (JSON) without an extension are not supported. ${UPGRADE_MSG}`
       : ext === ".grove"
-        ? "Legacy .grove (JSON) files are not supported. Please upgrade Grove to 2.x and re-open the file to migrate it to the new format."
-        : `Only .md Grovebooks are supported.`;
+        ? `Legacy .grove (JSON) files are not supported. ${UPGRADE_MSG}`
+        : "Only .md Grovebooks are supported.";
     return { valid: false, reason };
   }
   return { valid: true };
@@ -470,7 +451,7 @@ async function openGroveFile(baseUrl, filePath) {
 
     const mdContent = await response.text();
     if (!isMarkdownContent(mdContent)) {
-      vscode.window.showErrorMessage("Legacy .grove (JSON) files are not supported. Please upgrade Grove to 2.x to continue.");
+      vscode.window.showErrorMessage(`Legacy .grove (JSON) files are not supported. ${UPGRADE_MSG}`);
       return;
     }
     workspaceEdit.createFile(fileUri, { ignoreIfExists: true });
@@ -520,21 +501,14 @@ async function handleUri(uri) {
     return;
   }
 
-  // Check if we're in the working directory workspace
-  const workingDirPath = path.join(os.homedir(), EXTENSION_WORKING_DIR);
-  const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
-  // Use case-insensitive comparison on Windows since paths are case-insensitive
-  const normalizedCurrentFolder = currentFolder?.toLowerCase();
-  const normalizedWorkingDir = workingDirPath.toLowerCase();
-  if (normalizedCurrentFolder !== normalizedWorkingDir) {
-    trace("Not in working directory, focusing/opening correct workspace", { currentFolder, workingDirPath, isRetry });
-    
-    // Store pending file info as a fallback (for onDidChangeWindowState handler)
+  if (!isInWorkingDirectory()) {
+    trace("Not in working directory, focusing/opening correct workspace", {
+      currentFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      workingDirPath: getWorkingDirPath(),
+      isRetry,
+    });
     await extensionContext.globalState.update(PENDING_FILE_KEY, { baseUrl, filePath });
-    
-    // Open/focus the working directory workspace
-    const workingDir = vscode.Uri.file(workingDirPath);
+    const workingDir = vscode.Uri.file(getWorkingDirPath());
     await vscode.commands.executeCommand('vscode.openFolder', workingDir, { forceNewWindow: true });
     
     // Only re-trigger URI if this isn't already a retry (prevents infinite loops)
@@ -629,11 +603,7 @@ async function handleDocumentSave(document) {
     // Update synced content tracking
     const uri = document.uri.toString();
     lastSyncedContent.set(uri, contentToUpload);
-    
-    // Update status bar to synced
     updateStatusBar(SyncStatus.SYNCED);
-    trace("Updated status bar to synced", { fileName });
-
     vscode.window.showInformationMessage(`Grovebook saved: ${fileName}`);
   } catch (error) {
     trace("Upload failed", { error: error.message });
@@ -700,6 +670,10 @@ function handleReloadError(error) {
 // Path Utilities
 // ============================================================================
 
+function getWorkingDirPath() {
+  return path.join(os.homedir(), EXTENSION_WORKING_DIR);
+}
+
 /**
  * Creates a local file path for storing a grove file downloaded from the server.
  * @param {string} baseUrl - The base URL (e.g., "https://graphxr.kineviz.com")
@@ -707,14 +681,12 @@ function handleReloadError(error) {
  * @returns {string} - The local file path (preserves server filename, e.g. .md)
  */
 function createLocalFilePath(baseUrl, filePath) {
-  const localFilePath =
-    path.join(
-      os.homedir(),
-      EXTENSION_WORKING_DIR,
-      encodeBaseUrl(baseUrl),
-      encodeFilePath(filePath),
-    )
-  return localFilePath;
+  return path.join(
+    os.homedir(),
+    EXTENSION_WORKING_DIR,
+    encodeBaseUrl(baseUrl),
+    encodeFilePath(filePath)
+  );
 }
 
 // Converts a baseUrl into a cross-platform (filesystem-safe) folder name
